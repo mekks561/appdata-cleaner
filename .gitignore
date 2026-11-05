@@ -1,0 +1,24 @@
+# 运行时产物（不属于项目源码）
+logs/
+cache/
+testdata/
+_moved*/
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 截图等临时产物
+_shot*.png
+*.csv
+
+# 系统 / 编辑器
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/

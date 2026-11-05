@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AppData 磁盘清理助手</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.2.0</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="netinfo" id="netinfo"></div>
+  </header>
+
+  <div class="adminbar" id="adminBar">
+    <b>当前以普通用户权限运行</b>：受系统保护的目录（Windows 商店应用、部分软件安装目录）会提示「拒绝访问」，属于正常限制。
+    如确实需要清理，请关掉当前黑窗口，改双击同目录下的 <code>以管理员身份启动.bat</code>，在弹出的 UAC 框选「是」。
+  </div>
+
+  <div class="panel controls">
+    <div class="field">
+      <label>扫描目录</label>
+      <input class="path-input" id="root" value="">
+    </div>
+    <div class="field">
+      <label>展开层数</label>
+      <select id="depth">
+        <option value="2">2 层（快）</option>
+        <option value="3" selected>3 层（推荐）</option>
+        <option value="4">4 层（慢）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>目录入围阈值</label>
+      <select id="hotmb">
+        <option value="10">≥10 MB</option>
+        <option value="50" selected>≥50 MB</option>
+        <option value="200">≥200 MB</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>大文件阈值</label>
+      <select id="bigmb">
+        <option value="100">≥100 MB</option>
+        <option value="300" selected="selected">≥300 MB</option>
+        <option value="1024">≥1 GB</option>
+      </select>
+    </div>
+    <button class="btn primary" id="btnScan">开始扫描</button>
+    <button class="btn" id="btnRefresh" title="刷新磁盘可用空间">刷新磁盘信息</button>
+  </div>
+
+  <div class="notebar" id="incBar"></div>
+
+  <div class="panel progress" id="progress">
+    <div class="line">
+      <span><span class="spinner"></span><b id="pPhase">准备中</b></span>
+      <span>已统计文件 <b id="pFiles">0</b></span>
+      <span>已累计 <b id="pBytes">0 B</b></span>
+      <span>热点目录 <b id="pHot">0</b></span>
+      <span>耗时 <b id="pTime">0s</b></span>
+    </div>
+    <div class="sweep"></div>
+  </div>
+
+  <div class="stats">
+    <div class="panel stat a"><div class="k">AppData 占用</div><div class="v" id="sTotal">—</div><div class="sub" id="sTotalSub">尚未扫描</div></div>
+    <div class="panel stat b"><div class="k">文件总数</div><div class="v" id="sFiles">—</div><div class="sub" id="sFilesSub">已跳过系统保护目录</div></div>
+    <div class="panel stat c"><div class="k">安全可清理</div><div class="v" id="sClean">—</div><div class="sub" id="sCleanSub">已知安全缓存合计</div></div>
+    <div class="panel stat d"><div class="k">本次已释放</div><div class="v" id="sFreed">0 B</div><div class="sub" id="sFreedSub">累计于本次会话</div></div>
+  </div>
+
+  <div class="main">
+    <div class="panel" style="overflow:hidden">
+      <div class="tabs">
+        <button class="tab active" data-tab="hot">目录排行<span class="badge" id="cHot">0</span></button>
+        <button class="tab" data-tab="big">大文件<span class="badge" id="cBig">0</span></button>
+        <button class="tab" data-tab="err">访问异常<span class="badge" id="cErr">0</span></button>
+        <button class="tab" data-tab="history">历史<span class="badge" id="cHist">0</span></button>
+      </div>
+
+      <div class="filterbar" id="filterBar">
+        <input class="q" id="q" placeholder="搜索名称或路径，支持 * 通配　（ / 聚焦，Esc 清空 ）" autocomplete="off">
+        <div class="chips" id="chips">
+          <button class="chip on" data-f="all">全部</button>
+          <button class="chip" data-f="safe">仅安全缓存</button>
+          <button class="chip" data-f="suspect">仅疑似</button>
+          <button class="chip" data-f="data">仅用户数据</button>
+          <button class="chip" data-f="big">≥1 GB</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="btnExport" title="导出当前筛选后的可见行">导出 CSV</button>
+      </div>
+
+      <div class="truncbar" id="truncBar"></div>
+      <div class="tablewrap" id="listWrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px"><input type="checkbox" id="chkAll" title="全选当前列表（跳过禁止删除项）"></th>
+              <th class="sortable" data-sort="n" style="width:17%">名称<span class="arrow">↕</span></th>
+              <th>路径</th>
+              <th class="sortable num" data-sort="s" style="width:92px">大小<span class="arrow">↕</span></th>
+              <th style="width:96px">占比</th>
+              <th style="width:84px">类型</th>
+              <th class="sortable num" data-sort="f" style="width:74px">文件数<span class="arrow">↕</span></th>
+              <th style="width:66px"></th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="8"><div class="empty-state"><div class="big">还没有数据</div>点击「开始扫描」统计 AppData 下各目录占用</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tablewrap" id="histWrap" style="display:none">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:132px">时间</th>
+              <th style="width:104px">方式</th>
+              <th class="num" style="width:64px">项数</th>
+              <th class="num" style="width:96px">成功/失败</th>
+              <th class="num" style="width:104px">空间变化</th>
+              <th>明细</th>
+              <th style="width:96px"></th>
+            </tr>
+          </thead>
+          <tbody id="histBody">
+            <tr><td colspan="7"><div class="empty-state"><div class="big">还没有操作记录</div>清理、移动、撤销都会记在这里</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel chart">
+        <h3>Top 12 占用分布</h3>
+        <div id="chart"><div class="empty-state" style="padding:24px 0">扫描后显示</div></div>
+        <div class="legend">
+          <span><i class="lg safe"></i>安全缓存</span>
+          <span><i class="lg suspect"></i>疑似缓存</span>
+          <span><i class="lg data"></i>用户数据</span>
+          <span><i class="lg protected"></i>系统/程序</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>已选项目</h3>
+        <div id="selSummary" style="font-size:12.5px;color:var(--muted);line-height:1.7">
+          未选择任何项目。<br>勾选左侧列表可批量清理。
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn" id="btnClearSel" style="flex:1">清空选择</button>
+          <button class="btn primary" id="btnPreview" style="flex:1" disabled>预览并清理</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>回收站</h3>
+        <div class="recyc">
+          <div>当前占用约 <b id="trashSize">读取中…</b></div>
+          <div class="hint">移入回收站的项目要清空后才真正释放空间</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn" id="btnOpenBin2" style="flex:1">打开</button>
+          <button class="btn" id="btnTrash" style="flex:1">清空回收站</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>安全说明</h3>
+        <div style="font-size:12px;color:var(--muted);line-height:1.75">
+          · 默认删除方式为<b style="color:var(--text)">移入回收站</b>，可从回收站还原<br>
+          · <span class="tag protected">系统/程序</span> 禁止删除，仅可查看<br>
+          · <span class="tag safe">安全缓存</span> 删除后由程序自动重建；<span class="tag suspect">疑似缓存</span> 请先看说明<br>
+          · 每批最多处理 10 项，逐项校验结果<br>
+          · 所有操作记录在 <code style="font-size:11px">logs/</code> 目录
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="actionbar">
+  <div class="sum">已选 <b id="selCount">0</b> 项 · 合计 <b id="selSize">0 B</b></div>
+  <div class="hint" id="selOut"></div>
+  <div class="spacer"></div>
+  <button class="btn" id="btnRescan" disabled>重新扫描</button>
+  <button class="btn primary" id="btnPreview2" disabled>预览并清理</button>
+</div>
+
+<div class="mask" id="maskPreview">
+  <div class="modal">
+    <header><h2>确认清理清单</h2><button class="close" data-close="maskPreview">×</button></header>
+    <div class="body">
+      <div class="warnbox" id="pvWarn"></div>
+      <div class="list" id="pvList"></div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">
+        合计 <b id="pvTotal" style="color:var(--text);font-size:14px">0 B</b>
+        · 清理前磁盘可用 <b id="pvFree" style="color:var(--text)">—</b>
+      </div>
+      <div style="margin-top:14px;font-size:13px;font-weight:600;margin-bottom:8px">处理方式</div>
+      <div class="radio-row" id="modeRow">
+        <label class="radio on" data-mode="recycle">
+          <input type="radio" name="mode" value="recycle" checked>
+          <div><div class="t">移入回收站（推荐）</div>
+            <div class="d">可从回收站完整还原，最安全。适合清理缓存、日志、旧版本残留。</div></div>
+        </label>
+        <label class="radio" data-mode="move">
+          <input type="radio" name="mode" value="move">
+          <div><div class="t">移动到指定文件夹（可撤销）</div>
+            <div class="d">先搬到别处观察一段时间，确认没问题再彻底删除。执行后可一键还原。</div></div>
+        </label>
+        <label class="radio" data-mode="permanent">
+          <input type="radio" name="mode" value="permanent">
+          <div><div class="t">永久删除（不可恢复）</div>
+            <div class="d">不经过回收站，直接释放空间。仅在明确知道该目录用途时使用。</div></div>
+        </label>
+      </div>
+      <div id="destBox" style="display:none;margin-bottom:14px">
+        <div class="field"><label>目标文件夹（不存在会自动创建；不能是系统目录或盘符根）</label>
+          <input class="txt" id="dest" value=""></div>
+      </div>
+      <div id="permaBox" style="display:none;margin-bottom:14px">
+        <div class="warnbox">永久删除无法通过回收站恢复。请输入 <b>永久删除</b> 四个字以继续：</div>
+        <input class="txt" id="permaText" placeholder="在此输入：永久删除">
+      </div>
+      <label class="chk"><input type="checkbox" id="cf1">
+        <span>我已核对上方清单，确认这些目录/文件不再需要</span></label>
+      <label class="chk"><input type="checkbox" id="cf2">
+        <span>我知晓删除后需到<b>回收站</b>还原（永久删除除外），正在运行的程序可能因此丢失缓存或需重新登录</span></label>
+    </div>
+    <footer>
+      <span id="pvHint" style="margin-right:auto;font-size:12px;color:var(--muted)"></span>
+      <button class="btn" data-close="maskPreview">取消</button>
+      <button class="btn danger" id="btnDoClean" disabled>确认执行</button>
+    </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskResult">
+  <div class="modal">
+    <header><h2>清理结果</h2><button class="close" data-close="maskResult">×</button></header>
+    <div class="body">
+      <div style="text-align:center;padding:6px 0 14px">
+        <div class="big-num" id="rsFreed">0 B</div>
+        <div style="font-size:12px;color:var(--muted)" id="rsSub">磁盘可用空间变化</div>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:14px">
+        <div class="panel stat a" style="flex:1;border-left-width:3px"><div class="k">成功</div><div class="v" id="rsOk" style="font-size:18px">0</div></div>
+        <div class="panel stat c" style="flex:1;border-left-width:3px"><div class="k">失败</div><div class="v" id="rsFail" style="font-size:18px">0</div></div>
+        <div class="panel stat b" style="flex:1;border-left-width:3px"><div class="k">可用空间</div><div class="v" id="rsSpace" style="font-size:15px">—</div></div>
+      </div>
+      <div class="list" id="rsList"></div>
+      <div class="warnbox amber" id="rsHint" style="display:none;margin-top:12px"></div>
+    </div>
+    <footer>
+      <button class="btn" id="btnOpenBin" style="display:none;margin-right:auto">打开回收站</button>
+      <button class="btn" id="btnUndoMove" style="display:none;margin-right:auto">撤销本次移动</button>
+      <button class="btn" data-close="maskResult">关闭</button>
+      <button class="btn primary" id="btnRescan2">重新扫描验证</button>
+    </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskTrash">
+  <div class="modal" style="max-width:560px">
+    <header><h2>清空回收站</h2><button class="close" data-close="maskTrash">×</button></header>
+    <div class="body">
+      <div class="warnbox">
+        清空后<b>无法恢复</b>，回收站里所有项目（不只是本工具删除的）都会被永久删除。
+      </div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">
+        回收站当前占用约 <b id="trashSize2" style="color:var(--text)">—</b>
+      </div>
+      <div class="field"><label>请输入 <b>清空回收站</b> 五个字以继续</label>
+        <input class="txt" id="trashText" placeholder="在此输入：清空回收站"></div>
+    </div>
+    <footer>
+      <button class="btn" data-close="maskTrash">取消</button>
+      <button class="btn danger" id="btnDoTrash" disabled>确认清空</button>
+    </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskAbout">
+  <div class="modal" style="max-width:560px">
+    <header><h2>关于</h2><button class="close" data-close="maskAbout">×</button></header>
+    <div class="body"><div class="about" id="aboutBody"></div></div>
+    <footer><button class="btn" data-close="maskAbout">关闭</button></footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
