@@ -1,9 +1,0 @@
-{
-  "port": 8765,
-  "dest": "D:\\AppDataBackup",
-  "dup": {
-    "minSizeMB": 10,
-    "hashBudgetSec": 30
-  },
-  "rules": []
-}

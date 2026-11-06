@@ -22,3 +22,8 @@ Thumbs.db
 Desktop.ini
 .idea/
 .vscode/
+
+# 运行时用户配置（首次运行自动生成）
+config.json
+config.json.bak
+config.json.bad
