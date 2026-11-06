@@ -14,7 +14,7 @@ def run():
     # —— R4 版本贯通 ——
     st, info = get("/api/info")
     c.eq("GET /api/info 200", st, 200)
-    c.eq("version", info.get("version"), "1.2.0")
+    c.eq("version", info.get("version"), "1.3.0")
     c.ok("build 非空", bool(info.get("build")), info.get("build"))
     c.ok("python 字段存在", bool(info.get("python")), info.get("python"))
     c.ok("logDir 字段存在", bool(info.get("logDir")), info.get("logDir"))

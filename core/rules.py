@@ -139,6 +139,56 @@ _SOFT_TRIE = _build_trie([r for r in SOFT_RULES])
 _PROT_TRIE = _build_trie(PROTECTED_RULES)
 
 
+# ---------------- 用户自定义规则（1.3 R3） ----------------
+#
+# 优先级语义（防呆是第一原则）：
+#   1. 用户 protected > 一切 —— 用户说要保护的目录谁都不能删；
+#   2. 内置 protected 永远不被用户 safe 覆盖 —— 不能用一条自定义规则
+#      把 Microsoft\ 这类系统目录标成"安全缓存"；
+#   3. 用户 safe/suspect > 内置 soft —— 用户对自己的目录有最终解释权。
+_USER_PROT_TRIE = {}
+_USER_SOFT_TRIE = {}
+_USER_LOCK_HINT = "用户规则由 apply_user_rules() 原子替换，不要直接改这两个变量"
+
+
+def _make_user_rule(item):
+    return Rule(tuple(item["segments"]), item["level"],
+                item.get("vendor") or "自定义", item["note"])
+
+
+def apply_user_rules(items):
+    """注入用户自定义规则并重建前缀树（原子替换，扫描线程随时在查）。
+
+    items 已经过 config.validate() 校验。返回注入条数。
+    """
+    global _USER_PROT_TRIE, _USER_SOFT_TRIE
+    prot, soft = [], []
+    for it in items or []:
+        r = _make_user_rule(it)
+        (prot if r.level == LEVEL_PROTECTED else soft).append(r)
+    new_prot = _build_trie(prot)
+    new_soft = _build_trie(soft)
+    _USER_PROT_TRIE = new_prot
+    _USER_SOFT_TRIE = new_soft
+    return len(prot) + len(soft)
+
+
+def user_rule_count():
+    """当前生效的自定义规则条数（用于 /api/info 与测试）。"""
+    def count(trie):
+        n = 0
+        stack = [trie]
+        while stack:
+            node = stack.pop()
+            for k, v in node.items():
+                if k == "$":
+                    n += 1
+                else:
+                    stack.append(v)
+        return n
+    return count(_USER_PROT_TRIE) + count(_USER_SOFT_TRIE)
+
+
 # ---------------- 基础工具 ----------------
 
 def path_parts(path):
@@ -208,23 +258,47 @@ def _pick_soft(parts):
 
 
 def classify(path):
-    """返回 {level, deletable, vendor, note, rule}。
+    """返回 {level, deletable, vendor, note, rule, custom}。
 
     level: safe / suspect / data / protected
+    custom: True 表示由用户自定义规则命中（UI 要显示来源标记）
     """
     parts = path_parts(path)
+
+    # 1) 用户 protected 最高优先
+    hit = _walk_trie(_USER_PROT_TRIE, parts)
+    if hit is not None:
+        return {
+            "level": LEVEL_PROTECTED, "deletable": False,
+            "vendor": hit.vendor, "note": hit.note + "（自定义规则）",
+            "rule": hit.key, "custom": True,
+        }
+
+    # 2) 内置 protected —— 用户 safe 不能覆盖这里
     hit = _walk_trie(_PROT_TRIE, parts)
     if hit is not None:
         return {
             "level": LEVEL_PROTECTED, "deletable": False,
             "vendor": hit.vendor, "note": hit.note, "rule": hit.key,
+            "custom": False,
         }
 
+    # 3) 用户 safe/suspect 覆盖内置 soft
+    hit = _walk_trie(_USER_SOFT_TRIE, parts)
+    if hit is not None:
+        return {
+            "level": hit.level, "deletable": True,
+            "vendor": hit.vendor, "note": hit.note + "（自定义规则）",
+            "rule": hit.key, "custom": True,
+        }
+
+    # 4) 内置 soft 规则
     hit = _walk_trie(_SOFT_TRIE, parts)
     if hit is not None:
         return {
             "level": hit.level, "deletable": True,
             "vendor": hit.vendor, "note": hit.note, "rule": hit.key,
+            "custom": False,
         }
 
     # 启发式降级：名字像缓存，但不在已知清单内 —— 只给「疑似」，绝不给「安全」
@@ -233,10 +307,11 @@ def classify(path):
             return {
                 "level": LEVEL_SUSPECT, "deletable": True, "vendor": "",
                 "note": "目录名像缓存，但不在已知安全清单内，删除前请确认所属程序",
-                "rule": "heuristic:" + seg,
+                "rule": "heuristic:" + seg, "custom": False,
             }
 
-    return {"level": LEVEL_DATA, "deletable": True, "vendor": "", "note": "", "rule": ""}
+    return {"level": LEVEL_DATA, "deletable": True, "vendor": "", "note": "",
+            "rule": "", "custom": False}
 
 
 def categorize(path):

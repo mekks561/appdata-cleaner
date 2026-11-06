@@ -21,10 +21,10 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.2.0"
-BUILD = "2026-11-05"
+APP_VERSION = "1.3.0"
+BUILD = "2026-11-06"
 
-from core import actions, history, rules, scan  # noqa: E402
+from core import actions, config, history, rules, scan  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
 
@@ -32,7 +32,13 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 LOG_DIR = os.path.join(APP_DIR, "logs")
 DATA_DIR = os.path.join(APP_DIR, "cache")
-PORT = 8765
+
+# ---- 设置中心（1.3 R3）：启动读配置，端口/dest 默认值从 config.json 来 ----
+CFG_PATH = config.config_path(APP_DIR)
+CFG, CFG_WARNINGS = config.load(APP_DIR)
+rules.apply_user_rules(CFG["rules"])
+
+PORT = int(CFG["port"])
 
 USER_HOME = os.path.expanduser("~")
 DEFAULT_ROOT = os.path.join(USER_HOME, "AppData")
@@ -40,6 +46,10 @@ DEFAULT_ROOT = os.path.join(USER_HOME, "AppData")
 MAX_BODY = 1024 * 1024
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT, "127.0.0.1", "localhost"}
 ALLOWED_ORIGINS = {"http://127.0.0.1:%d" % PORT, "http://localhost:%d" % PORT}
+
+# 一键清理（R2）：清单由服务端从扫描树枚举，不信任客户端传来的任何列表
+ONECLICK_MAX = 300
+ONECLICK_CONFIRM = "一键清理"
 
 # 扫描树的体积索引，展开时命中即 0 IO
 _IDX = {"key": None, "map": {}}
@@ -176,6 +186,10 @@ class Handler(BaseHTTPRequestHandler):
                 "logDir": LOG_DIR,
                 "dataDir": DATA_DIR,
                 "levels": rules.LEVEL_TEXT,
+                "dest": CFG["dest"],
+                "configPath": CFG_PATH,
+                "customRules": rules.user_rule_count(),
+                "configWarnings": CFG_WARNINGS,
             })
         if u.path == "/api/scan/status":
             return self._json(STATE.status())
@@ -193,6 +207,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"items": history.read(LOG_DIR, limit), "logDir": LOG_DIR})
         if u.path == "/api/trash/size":
             return self._json(actions.recycle_bin_size())
+        if u.path == "/api/config":
+            return self._json({"config": CFG, "path": CFG_PATH,
+                               "customRules": rules.user_rule_count()})
         return self._json({"error": "not found"}, 404)
 
     # ---------- POST ----------
@@ -233,6 +250,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_undo(body)
         if u.path == "/api/trash/empty":
             return self._post_trash_empty(body)
+        if u.path == "/api/config":
+            return self._post_config(body)
+        if u.path == "/api/oneclick/preview":
+            return self._post_oneclick_preview()
+        if u.path == "/api/oneclick":
+            return self._post_oneclick(body)
         if u.path == "/api/openrecyclebin":
             try:
                 os.system("explorer.exe shell:RecycleBinFolder")
@@ -366,6 +389,105 @@ class Handler(BaseHTTPRequestHandler):
             })
         return self._json({"ok": ok, "msg": msg, "freeBefore": before, "freeAfter": after,
                            "freed": max(0, after - before)}, 200 if ok else 400)
+
+    def _post_config(self, body):
+        """保存设置（R3）。逐字段校验，不通过就整体拒绝，绝不写半份配置。"""
+        global CFG, CFG_WARNINGS
+        cfg, errors, warnings = config.validate(body)
+        if errors:
+            return self._json({"error": "配置未保存，存在非法字段",
+                               "details": errors}, 400)
+        err = config.save(APP_DIR, cfg)
+        if err:
+            return self._json({"error": err}, 500)
+        # 自定义规则立即生效（前缀树原子重建）
+        try:
+            n = rules.apply_user_rules(cfg["rules"])
+        except Exception as ex:
+            return self._json({"error": "自定义规则应用失败：%s" % ex}, 500)
+        restart_hint = ""
+        if cfg["port"] != PORT:
+            restart_hint = "端口修改需重启服务后生效"
+        CFG = cfg
+        CFG_WARNINGS = warnings
+        return self._json({"ok": True, "config": CFG,
+                           "customRules": n, "warnings": warnings,
+                           "restartHint": restart_hint})
+
+    # ---- 一键清理（R2） ----
+    def _collect_safe_items(self):
+        """从扫描树枚举所有「安全缓存且可删」的目录。
+
+        · 只认扫描树节点自带的 level/deletable（判定单点在 rules.py）；
+        · 命中即停：父目录将整体清理，不再枚举其子目录（避免重复计入）；
+        · s<=0 的空目录无清理价值，跳过；
+        · 扫描树是上次扫描的快照，已不存在的路径直接跳过 ——
+          否则「清理 → 再预览」还会把刚删完的目录又列出来。
+        """
+        res = STATE.result()
+        if not res:
+            return None
+        items = []
+
+        def rec(node):
+            if len(items) >= ONECLICK_MAX:
+                return
+            if not node or node.get("s", 0) <= 0:
+                return
+            p = node.get("p") or ""
+            if not os.path.exists(safe_path(p)):
+                return
+            if node.get("level") == "safe" and node.get("deletable") is not False:
+                items.append(node)
+                return                      # 整目录清掉，子项不再重复列出
+            for k in node.get("kids") or ():
+                rec(k)
+
+        rec(res.get("tree"))
+        items.sort(key=lambda x: -x["s"])
+        return items
+
+    def _post_oneclick_preview(self):
+        items = self._collect_safe_items()
+        if items is None:
+            return self._json({"error": "还没有扫描结果"}, 404)
+        if not items:
+            return self._json({"items": [], "total": 0, "count": 0,
+                               "partial": False,
+                               "msg": "当前扫描结果里没有「安全缓存」级目录"})
+        return self._json({
+            "items": [{"p": it["p"], "n": it["n"], "s": it["s"],
+                       "note": it.get("note") or "", "f": it.get("f")} for it in items],
+            "total": sum(it["s"] for it in items),
+            "count": len(items),
+            "partial": len(items) >= ONECLICK_MAX,
+            "free": dir_usage(STATE.root(DEFAULT_ROOT))["free"],
+        })
+
+    def _post_oneclick(self, body):
+        # 双保险：确认词 + 服务端重新枚举（忽略客户端可能传来的任何清单）
+        if (body.get("confirmText") or "").strip() != ONECLICK_CONFIRM:
+            return self._json({"error": "请输入确认词「%s」" % ONECLICK_CONFIRM}, 400)
+        items = self._collect_safe_items()
+        if items is None:
+            return self._json({"error": "还没有扫描结果"}, 404)
+        if not items:
+            return self._json({"error": "没有可清理的安全缓存项"}, 400)
+        paths = [it["p"] for it in items]
+        # 再核一遍 level：扫描树是旧的而规则可能已更新（比如刚删掉一条 safe 自定义规则）
+        paths = [p for p in paths if rules.classify(p)["level"] == "safe"]
+        if not paths:
+            return self._json({"error": "没有可清理的安全缓存项"}, 400)
+
+        root = STATE.root(DEFAULT_ROOT)
+        result = actions.exec_action(paths, "recycle", None, root)
+        result["mode"] = "oneclick"
+        result["manifestId"] = ""
+        result["undoable"] = False
+
+        write_log("oneclick", None, result["results"],
+                  result["freed"], result["freeBefore"], result["freeAfter"])
+        return self._json(result)
 
     def _post_open(self, body):
         p = body.get("path") or ""

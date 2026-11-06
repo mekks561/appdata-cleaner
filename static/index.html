@@ -11,7 +11,7 @@
 
   <header>
     <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
-      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.2.0</button>
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.3.0</button>
     </div>
     <div class="spacer"></div>
     <div class="netinfo" id="netinfo"></div>
@@ -82,6 +82,7 @@
         <button class="tab" data-tab="big">大文件<span class="badge" id="cBig">0</span></button>
         <button class="tab" data-tab="err">访问异常<span class="badge" id="cErr">0</span></button>
         <button class="tab" data-tab="history">历史<span class="badge" id="cHist">0</span></button>
+        <button class="tab" data-tab="settings">设置</button>
       </div>
 
       <div class="filterbar" id="filterBar">
@@ -136,6 +137,32 @@
           </tbody>
         </table>
       </div>
+
+      <div class="tablewrap" id="setWrap" style="display:none">
+        <div class="settings" style="padding:4px 6px">
+          <h3>基础设置</h3>
+          <div class="field" style="max-width:560px"><label>移动模式的默认目标文件夹（不能是系统目录或盘符根）</label>
+            <input class="txt" id="cfgDest" spellcheck="false"></div>
+          <div class="field" style="max-width:560px"><label>服务端口 1024-65535（保存后需重启服务才生效）</label>
+            <input class="txt" id="cfgPort" spellcheck="false"></div>
+          <div class="field" style="max-width:560px"><label>重复文件检测 · 最小文件体积 MB（预留给下一批功能）</label>
+            <input class="txt" id="cfgDupMin" spellcheck="false"></div>
+
+          <h3 style="margin-top:24px">自定义规则</h3>
+          <div class="hint" style="font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;max-width:720px">
+            每行一条，格式：<code>路径段/路径段 | 级别 | 说明</code>　级别可填
+            <b>safe</b>（安全缓存）/ <b>suspect</b>（疑似缓存）/ <b>protected</b>（禁止删除），<b>说明必填</b>。<br>
+            示例：<code>local/mytool/cache | safe | 自建工具的下载缓存，删除后自动重建</code><br>
+            约束：用户 protected 优先级最高；<b>safe 无法把系统保护目录改成可删</b>（内置 protected 永远赢）；最多 64 条、每条最多 8 段。
+          </div>
+          <textarea class="txt" id="cfgRules" rows="7" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;max-width:720px"></textarea>
+          <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+            <button class="btn" id="btnCfgReload">放弃修改</button>
+            <button class="btn primary" id="btnCfgSave">保存设置</button>
+            <span id="cfgMsg" style="font-size:12.5px;color:var(--muted)"></span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="side">
@@ -158,6 +185,13 @@
           <button class="btn" id="btnClearSel" style="flex:1">清空选择</button>
           <button class="btn primary" id="btnPreview" style="flex:1" disabled>预览并清理</button>
         </div>
+      </div>
+      <div class="panel">
+        <h3>一键清理安全缓存</h3>
+        <div class="hint">把扫描结果里所有 <span class="tag safe">安全缓存</span> 目录一次清入回收站。
+          清单由服务端从扫描树直接枚举：<b>疑似缓存、用户数据、系统目录绝不参与</b>；执行前会再次展示完整清单确认。</div>
+        <button class="btn primary" id="btnOneClick" style="width:100%;margin-top:10px" disabled
+                title="扫描后可用">一键清理（先预览）</button>
       </div>
       <div class="panel">
         <h3>回收站</h3>
@@ -282,6 +316,31 @@
     <footer>
       <button class="btn" data-close="maskTrash">取消</button>
       <button class="btn danger" id="btnDoTrash" disabled>确认清空</button>
+    </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskOneClick">
+  <div class="modal" style="max-width:640px">
+    <header><h2>一键清理 · 安全缓存</h2><button class="close" data-close="maskOneClick">×</button></header>
+    <div class="body">
+      <div class="warnbox">以下清单由服务端从扫描树直接枚举，<b>仅含「安全缓存」级目录</b>（删除后由程序自动重建）。
+        执行后项目进入<b>回收站</b>，可随时还原。</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">
+        共 <b id="ocCount" style="color:var(--text)">0</b> 项 · 合计
+        <b id="ocTotal" style="color:var(--text);font-size:14px">0 B</b>
+        <span id="ocPartial" style="display:none;color:var(--warn)">（清单已达上限，仅含最大的 300 项）</span>
+      </div>
+      <div class="list" id="ocList" style="max-height:260px"></div>
+      <label class="chk" style="margin-top:12px"><input type="checkbox" id="ocCf">
+        <span>我已核对上方清单，确认执行一键清理</span></label>
+      <div class="field" style="margin-top:10px;max-width:420px"><label>请输入 <b>一键清理</b> 四个字以继续</label>
+        <input class="txt" id="ocText" placeholder="在此输入：一键清理"></div>
+    </div>
+    <footer>
+      <span style="margin-right:auto;font-size:12px;color:var(--muted)">移入回收站 · 可还原</span>
+      <button class="btn" data-close="maskOneClick">取消</button>
+      <button class="btn danger" id="btnDoOneClick" disabled>确认执行</button>
     </footer>
   </div>
 </div>

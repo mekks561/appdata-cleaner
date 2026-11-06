@@ -9,7 +9,7 @@ const LEVEL = {
 };
 const MODE_TEXT = {
   recycle: "移入回收站", move: "移动到文件夹", permanent: "永久删除",
-  undo: "撤销还原", "trash-empty": "清空回收站",
+  undo: "撤销还原", "trash-empty": "清空回收站", oneclick: "一键清理",
 };
 function lv(x) { return LEVEL[x.level || x.cat] || LEVEL.data; }
 function isDeletable(x) { return x.deletable !== false && (x.level || x.cat) !== "protected"; }
@@ -31,6 +31,8 @@ const state = {
   rows: [], cursor: -1,
   history: [], historyLoaded: false,
   lastManifest: "",
+  config: null, configLoaded: false,
+  oneclick: null,
 };
 
 function fmt(n){
@@ -50,7 +52,11 @@ async function api(path, body){
   const opt = body ? {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)} : {};
   const r = await fetch(path, opt);
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  if (!r.ok){
+    const err = new Error(j.error || ("HTTP " + r.status));
+    if (j.details) err.details = j.details;
+    throw err;
+  }
   return j;
 }
 
@@ -70,6 +76,7 @@ async function init(){
     renderNet();
     if (!info.admin) $("#adminBar").style.display = "block";
     loadTrashSize();
+    loadConfig().catch(() => {});
     const st = await api("/api/scan/status");
     if (st.done && !st.running) await loadResult(true);
   } catch(e){
@@ -187,6 +194,13 @@ function renderStats(){
   $("#cBig").textContent = state.big.length;
   $("#cErr").textContent = state.errors.length;
   $("#cHist").textContent = state.history.length;
+  const oc = $("#btnOneClick");
+  if (oc){
+    oc.disabled = !state.scanned;
+    oc.title = state.scanned
+      ? `共 ${state.hot.filter(x => (x.level || x.cat) === "safe").length} 个安全缓存目录入围`
+      : "扫描后可用";
+  }
 }
 
 /* ---------- 搜索与筛选（R8） ---------- */
@@ -423,7 +437,7 @@ function setMode(mode){
   $("#destBox").style.display = mode === "move" ? "block" : "none";
   $("#permaBox").style.display = mode === "permanent" ? "block" : "none";
   if (mode === "move" && !$("#dest").value){
-    $("#dest").value = "D:\\AppDataBackup";
+    $("#dest").value = (state.config && state.config.dest) || "D:\\AppDataBackup";
   }
   updateDoBtn();
 }
@@ -645,6 +659,151 @@ function updateTrashBtn(){
   $("#btnDoTrash").disabled = $("#trashText").value.trim() !== "清空回收站";
 }
 
+/* ---------- 设置中心（1.3 R3） ---------- */
+async function loadConfig(){
+  const r = await api("/api/config");
+  state.config = r.config;
+  state.configLoaded = true;
+  const rules = r.config.rules || [];
+  const lines = rules.map(x => `${x.segments.join("/")} | ${x.level} | ${x.note}`);
+  $("#cfgRules").value = lines.join("\n") + (lines.length ? "\n" : "");
+  $("#cfgDest").value = r.config.dest || "";
+  $("#cfgPort").value = r.config.port || "";
+  $("#cfgDupMin").value = (r.config.dup || {}).minSizeMB;
+  $("#cfgMsg").textContent = `${rules.length} 条自定义规则生效中 · 配置文件：${r.path}`;
+}
+
+function parseRuleLines(text){
+  const rules = [];
+  const errors = [];
+  text.split("\n").forEach((line, i) => {
+    const t = line.trim();
+    if (!t) return;
+    const segs = t.split("|").map(s => s.trim());
+    if (segs.length !== 3){
+      errors.push(`第 ${i + 1} 行：格式应为 段/段 | 级别 | 说明（实际 ${segs.length} 段）`);
+      return;
+    }
+    const [path, level, note] = segs;
+    const parts = path.split(/[\\/]+/).map(s => s.trim()).filter(Boolean);
+    if (!parts.length){ errors.push(`第 ${i + 1} 行：路径段为空`); return; }
+    if (!["safe", "suspect", "protected"].includes(level)){
+      errors.push(`第 ${i + 1} 行：级别必须是 safe / suspect / protected`);
+      return;
+    }
+    if (!note){ errors.push(`第 ${i + 1} 行：说明必填`); return; }
+    rules.push({ segments: parts, level, note });
+  });
+  return { rules, errors };
+}
+
+async function saveConfig(){
+  const { rules, errors } = parseRuleLines($("#cfgRules").value);
+  const msg = $("#cfgMsg");
+  if (errors.length){
+    msg.innerHTML = `<span style="color:var(--danger)">${errors.length} 行有误（未保存）：</span><br>` +
+      errors.map(esc).join("<br>");
+    return;
+  }
+  const port = parseInt($("#cfgPort").value, 10);
+  const dupMin = parseInt($("#cfgDupMin").value, 10);
+  const btn = $("#btnCfgSave");
+  btn.disabled = true; btn.textContent = "保存中…";
+  try {
+    const r = await api("/api/config", {
+      port: isNaN(port) ? $("#cfgPort").value : port,
+      dest: $("#cfgDest").value.trim(),
+      dup: { minSizeMB: isNaN(dupMin) ? 10 : dupMin },
+      rules,
+    });
+    state.config = r.config;
+    msg.innerHTML = `<span style="color:var(--ok)">已保存 · ${r.customRules} 条自定义规则已生效</span>` +
+      (r.warnings && r.warnings.length ? `<br><span style="color:var(--warn)">部分条目被丢弃：</span><br>` + r.warnings.map(esc).join("<br>") : "") +
+      (r.restartHint ? `<br><span style="color:var(--warn)">${esc(r.restartHint)}</span>` : "");
+    toast("设置已保存");
+  } catch(e){
+    msg.innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>` +
+      (e.details && e.details.length ? `<br>${e.details.map(esc).join("<br>")}` : "");
+  } finally {
+    btn.disabled = false; btn.textContent = "保存设置";
+  }
+}
+
+/* ---------- 一键清理安全缓存（1.3 R2） ---------- */
+async function openOneClick(){
+  if (!state.scanned) return toast("请先扫描");
+  try {
+    const r = await api("/api/oneclick/preview", {});
+    if (!r.count){
+      toast(r.msg || "当前扫描结果里没有「安全缓存」级目录");
+      return;
+    }
+    state.oneclick = r;
+    $("#ocCount").textContent = r.count;
+    $("#ocTotal").textContent = fmt(r.total);
+    $("#ocPartial").style.display = r.partial ? "inline" : "none";
+    $("#ocList").innerHTML = r.items.map(x => `
+      <div class="lrow">
+        <span class="s">${fmt(x.s)}</span>
+        <span class="p" title="${esc(x.p)}">${esc(x.p)}</span>
+        ${x.note ? `<span class="note" title="${esc(x.note)}">${esc(x.note)}</span>` : ""}
+      </div>`).join("");
+    $("#ocCf").checked = false;
+    $("#ocText").value = "";
+    $("#btnDoOneClick").disabled = true;
+    $("#maskOneClick").classList.add("on");
+  } catch(e){
+    toast(e.message);
+  }
+}
+
+function updateOneClickBtn(){
+  $("#btnDoOneClick").disabled =
+    !($("#ocCf").checked && $("#ocText").value.trim() === "一键清理");
+}
+
+async function doOneClick(){
+  const btn = $("#btnDoOneClick");
+  btn.disabled = true; btn.textContent = "执行中…";
+  try {
+    const r = await api("/api/oneclick", { confirmText: $("#ocText").value.trim() });
+    closeMask("maskOneClick");
+    state.sessionFreed += r.freed;
+    for (const item of r.results){
+      if (item.ok){
+        state.hot = state.hot.filter(x => x.p !== item.p);
+        state.selected.delete(item.p);
+        state.expanded.delete(item.p);
+      }
+    }
+    renderStats(); renderTable(); renderChart(); renderSel();
+
+    $("#btnOpenBin").style.display = "inline-block";
+    $("#btnUndoMove").style.display = "none";
+    $("#rsFreed").textContent = fmt(r.freedBySize);
+    $("#rsFreed").style.color = "var(--accent)";
+    $("#rsSub").textContent = `一键清理完成 · 已移入回收站，可随时还原　·　当前可用 ${fmt(r.freeAfter)}`;
+    $("#rsOk").textContent = r.okCount;
+    $("#rsFail").textContent = r.failCount;
+    $("#rsSpace").textContent = fmt(r.freeAfter);
+    $("#rsList").innerHTML = r.results.map(x => `
+      <div class="lrow ${x.ok ? "" : "bad"}">
+        <span class="${x.ok ? "res-ok" : "res-fail"}">${x.ok ? "成功" : "失败"}</span>
+        <span class="p" title="${esc(x.p)}">${esc(x.p)}</span>
+        <span style="font-size:11.5px;color:${x.ok ? "var(--muted)" : "var(--danger)"};max-width:44%;text-align:right">${esc(x.msg)}</span>
+      </div>`).join("");
+    $("#rsHint").style.display = "none";
+    $("#maskResult").classList.add("on");
+    state.historyLoaded = false;
+    loadTrashSize();
+  } catch(e){
+    toast(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "确认执行";
+    updateOneClickBtn();
+  }
+}
+
 /* ---------- 关于 ---------- */
 function openAbout(){
   const a = state.about || {};
@@ -712,11 +871,13 @@ document.addEventListener("change", e => {
     renderSel();
   }
   if (["cf1","cf2"].includes(e.target.id)) updateDoBtn();
+  if (["ocCf"].includes(e.target.id) || e.target.id === "ocText") updateOneClickBtn();
 });
 
 document.addEventListener("input", e => {
   if (["permaText","dest"].includes(e.target.id)) updateDoBtn();
   if (e.target.id === "trashText") updateTrashBtn();
+  if (e.target.id === "ocText") updateOneClickBtn();
   if (e.target.id === "q"){
     state.q = e.target.value;
     state.cursor = -1;
@@ -741,9 +902,11 @@ function switchTab(name){
   state.tab = name;
   $$(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab === name));
   const isHist = name === "history";
-  $("#listWrap").style.display = isHist ? "none" : "block";
+  const isSet = name === "settings";
+  $("#listWrap").style.display = (isHist || isSet) ? "none" : "block";
   $("#histWrap").style.display = isHist ? "block" : "none";
-  $("#filterBar").style.display = isHist ? "none" : "flex";
+  $("#setWrap").style.display = isSet ? "block" : "none";
+  $("#filterBar").style.display = (isHist || isSet) ? "none" : "flex";
   state.expanded.clear();
   state.cursor = -1;
   if (isHist){
@@ -751,6 +914,10 @@ function switchTab(name){
     $("#truncBar").innerHTML = "";
     if (!state.historyLoaded) loadHistory();
     else renderHistory();
+  } else if (isSet){
+    $("#truncBar").classList.remove("on");
+    $("#truncBar").innerHTML = "";
+    loadConfig().catch(e => toast(e.message));
   } else {
     renderTable();
   }
@@ -797,6 +964,10 @@ $("#btnOpenBin2").addEventListener("click", () => {
 });
 $("#btnTrash").addEventListener("click", openTrash);
 $("#btnDoTrash").addEventListener("click", doEmptyTrash);
+$("#btnOneClick").addEventListener("click", openOneClick);
+$("#btnDoOneClick").addEventListener("click", doOneClick);
+$("#btnCfgSave").addEventListener("click", saveConfig);
+$("#btnCfgReload").addEventListener("click", () => loadConfig().catch(e => toast(e.message)));
 
 /* ---------- 键盘（R8） ---------- */
 document.addEventListener("keydown", e => {
