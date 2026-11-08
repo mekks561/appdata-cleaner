@@ -25,7 +25,9 @@ APP_NAME = "AppData 磁盘清理助手"
 APP_VERSION = "1.3.0"
 BUILD = "2026-11-06"
 
-from core import actions, config, history, rules, scan  # noqa: E402
+from core import actions, config, dupfind, history, rules, scan  # noqa: E402
+from core.dupfind import DUP  # noqa: E402
+from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
 
@@ -211,6 +213,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"items": history.read(LOG_DIR, limit), "logDir": LOG_DIR})
         if u.path == "/api/trash/size":
             return self._json(actions.recycle_bin_size())
+        if u.path == "/api/dup/status":
+            return self._json(DUP.status())
+        if u.path == "/api/dup/result":
+            res = DUP.result()
+            if not res:
+                return self._json({"error": "还没有重复文件扫描结果"}, 404)
+            out = dict(res)
+            out["seq"] = DUP.seq()
+            return self._json(out)
         if u.path == "/api/config":
             return self._json({"config": CFG, "path": CFG_PATH,
                                "customRules": rules.user_rule_count()})
@@ -262,6 +273,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_oneclick(body)
         if u.path == "/api/restart-admin":
             return self._post_restart_admin()
+        if u.path == "/api/dup/scan":
+            return self._post_dup_scan(body)
+        if u.path == "/api/dup/clean":
+            return self._post_dup_clean(body)
         if u.path == "/api/openrecyclebin":
             try:
                 os.system("explorer.exe shell:RecycleBinFolder")
@@ -547,6 +562,112 @@ class Handler(BaseHTTPRequestHandler):
             "ok": True,
             "message": "请在弹出的 UAC 窗口点「是」。确认后服务将以管理员身份自动重启，"
                        "本页面会自动恢复；点「否」则保持现状。",
+        })
+
+    # ---------- 重复文件检测（R1） ----------
+
+    def _post_dup_scan(self, body):
+        if DUP.status()["running"]:
+            return self._json({"error": "重复文件扫描进行中，请稍候"}, 409)
+        dup_cfg = CFG.get("dup") or {}
+        try:
+            raw_min = body.get("minSizeMB")
+            min_mb = float(raw_min if raw_min is not None
+                           else dup_cfg.get("minSizeMB", 10))
+        except (TypeError, ValueError):
+            min_mb = 10.0
+        min_mb = min(1440.0, max(0.01, min_mb))
+        try:
+            budget = float(dup_cfg.get("hashBudgetSec", 30) or 30)
+        except (TypeError, ValueError):
+            budget = 30.0
+        root = STATE.root(DEFAULT_ROOT)
+        min_bytes = int(min_mb * dupfind.MB)
+
+        cached = DUP.result()
+        if (cached and not body.get("fresh")
+                and cached.get("root") == root and cached.get("minSize") == min_bytes):
+            return self._json({"ok": True, "cached": True})
+
+        DUP.begin()
+
+        def job():
+            try:
+                DUP.finish(dupfind.find_duplicates(
+                    root, min_size=min_bytes, budget_sec=budget,
+                    on_phase=DUP.phase))
+            except Exception as ex:
+                DUP.fail(str(ex))
+
+        threading.Thread(target=job, daemon=True).start()
+        return self._json({"ok": True, "cached": False, "minSizeMB": min_mb,
+                           "budgetSec": budget, "root": root})
+
+    def _post_dup_clean(self, body):
+        res = DUP.result()
+        if not res:
+            return self._json({"error": "还没有重复文件扫描结果"}, 400)
+        by_hash = {g["hash"]: g for g in res.get("groups") or []}
+        hashes = body.get("groupHashes") or []
+        if not hashes:
+            return self._json({"error": "请选择要清理的重复组"}, 400)
+        policy = body.get("keepPolicy") or "newest"
+        if policy not in ("newest", "oldest", "manual"):
+            return self._json({"error": "未知的保留策略"}, 400)
+        manual_keep = set(body.get("keepPaths") or [])
+
+        targets = []
+        for h in hashes:
+            g = by_hash.get(h)
+            if not g:
+                continue
+            copies = g.get("copies") or []
+            if policy == "manual":
+                keep = manual_keep & {c["p"] for c in copies}
+            elif policy == "oldest":
+                keep = {min(copies, key=lambda c: c["m"])["p"]} if copies else set()
+            else:
+                keep = {max(copies, key=lambda c: c["m"])["p"]} if copies else set()
+            if not keep and copies:
+                keep = {copies[0]["p"]}
+            for c in copies:
+                if c["p"] in keep:
+                    continue
+                targets.append((c["p"], g["size"]))
+        if not targets:
+            return self._json({"error": "没有需要清理的项（每组都至少保留一份）"}, 400)
+
+        root = STATE.root(DEFAULT_ROOT)
+        before = dir_usage(root)["free"]
+        results = []
+        for p, size in targets:
+            if not inside(root, p):
+                results.append({"p": p, "ok": False, "msg": "路径不在扫描目录内，已拒绝"})
+                continue
+            if rules.is_protected(p):
+                results.append({"p": p, "ok": False, "msg": "系统/程序数据目录，已禁止删除"})
+                continue
+            if not os.path.exists(safe_path(p)):
+                results.append({"p": p, "ok": False, "msg": "路径已不存在"})
+                continue
+            try:
+                actions.recycle([p])
+                results.append({"p": p, "ok": True, "msg": "已移入回收站", "size": size})
+            except OSError as ex:
+                results.append({"p": p, "ok": False, "msg": classify_error(ex, p)})
+
+        after = dir_usage(root)["free"]
+        freed = max(0, after - before)
+        write_log("dup", "", results, freed, before, after)
+        return self._json({
+            "results": results,
+            "okCount": sum(1 for r in results if r["ok"]),
+            "failCount": sum(1 for r in results if not r["ok"]),
+            "freed": freed,
+            "freeBefore": before,
+            "freeAfter": after,
+            "undoable": False,
+            "recycleHint": "已移入回收站，可从系统回收站还原",
         })
 
 

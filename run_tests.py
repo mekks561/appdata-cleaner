@@ -17,7 +17,8 @@ import urllib.request
 APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
-from tests import test_api, test_config, test_flow, test_increment, test_m1, test_m3, test_rules  # noqa: E402
+from tests import (test_api, test_config, test_dup, test_flow, test_increment,  # noqa: E402
+                   test_m1, test_m3, test_rules)
 from tests.common import BASE  # noqa: E402
 
 
@@ -58,6 +59,7 @@ def main():
         results.append(test_increment.run())
         results.append(test_m3.run())
         results.append(test_m1.run())
+        results.append(test_dup.run())
     finally:
         if proc:
             proc.terminate()

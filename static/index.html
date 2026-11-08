@@ -81,6 +81,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="hot">目录排行<span class="badge" id="cHot">0</span></button>
         <button class="tab" data-tab="big">大文件<span class="badge" id="cBig">0</span></button>
+        <button class="tab" data-tab="dup">重复文件<span class="badge" id="cDup">0</span></button>
         <button class="tab" data-tab="err">访问异常<span class="badge" id="cErr">0</span></button>
         <button class="tab" data-tab="history">历史<span class="badge" id="cHist">0</span></button>
         <button class="tab" data-tab="settings">设置</button>
@@ -139,6 +140,29 @@
         </table>
       </div>
 
+      <div class="tablewrap" id="dupWrap" style="display:none">
+        <div style="padding:12px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line)">
+          <label style="font-size:12.5px;color:var(--muted)">最小体积</label>
+          <select id="dupMin" class="txt" style="width:120px">
+            <option value="1">≥ 1 MB</option>
+            <option value="10" selected>≥ 10 MB</option>
+            <option value="50">≥ 50 MB</option>
+          </select>
+          <button class="btn primary" id="btnDupScan">扫描重复文件</button>
+          <span id="dupStatus" style="font-size:12.5px;color:var(--muted)">按内容哈希比对，只认完全一致的文件</span>
+          <div class="spacer" style="flex:1"></div>
+          <span id="dupSummary" style="font-size:12.5px;color:var(--muted)"></span>
+        </div>
+        <div id="dupList" style="padding:10px 14px;max-height:calc(100vh - 360px);overflow:auto">
+          <div class="empty-state"><div class="big">还没有扫描</div>点「扫描重复文件」找出内容完全相同的缓存文件</div>
+        </div>
+        <div style="padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center">
+          <span id="dupSelInfo" style="font-size:12.5px;color:var(--muted)">未选择任何重复组</span>
+          <div style="flex:1"></div>
+          <button class="btn danger" id="btnDupClean" disabled>清理选中重复项</button>
+        </div>
+      </div>
+
       <div class="tablewrap" id="setWrap" style="display:none">
         <div class="settings" style="padding:4px 6px">
           <h3>基础设置</h3>
@@ -146,8 +170,10 @@
             <input class="txt" id="cfgDest" spellcheck="false"></div>
           <div class="field" style="max-width:560px"><label>服务端口 1024-65535（保存后需重启服务才生效）</label>
             <input class="txt" id="cfgPort" spellcheck="false"></div>
-          <div class="field" style="max-width:560px"><label>重复文件检测 · 最小文件体积 MB（预留给下一批功能）</label>
+          <div class="field" style="max-width:560px"><label>重复文件检测 · 最小文件体积 MB（1-10240，默认 10）</label>
             <input class="txt" id="cfgDupMin" spellcheck="false"></div>
+          <div class="field" style="max-width:560px"><label>重复文件检测 · 内容哈希时间预算 秒（5-600，超时返回部分结果）</label>
+            <input class="txt" id="cfgDupBudget" spellcheck="false"></div>
 
           <h3 style="margin-top:24px">自定义规则</h3>
           <div class="hint" style="font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;max-width:720px">
@@ -342,6 +368,28 @@
       <span style="margin-right:auto;font-size:12px;color:var(--muted)">移入回收站 · 可还原</span>
       <button class="btn" data-close="maskOneClick">取消</button>
       <button class="btn danger" id="btnDoOneClick" disabled>确认执行</button>
+    </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskDup">
+  <div class="modal" style="max-width:680px">
+    <header><h2>清理重复文件</h2><button class="close" data-close="maskDup">×</button></header>
+    <div class="body">
+      <div class="warnbox">每组保留 1 份（默认保留<b>最新修改</b>的那份，可在上一页改选），其余移入<b>回收站</b>。
+        重复判定为整份内容 MD5 全等，不存在「看着像」的情况。</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">
+        将删除 <b id="dupDelCount" style="color:var(--text)">0</b> 个文件 · 释放约
+        <b id="dupDelSize" style="color:var(--text);font-size:14px">0 B</b>
+      </div>
+      <div class="list" id="dupDelList" style="max-height:260px"></div>
+      <label class="chk" style="margin-top:12px"><input type="checkbox" id="dupCf">
+        <span>我已核对，确认这些是重复文件</span></label>
+    </div>
+    <footer>
+      <span style="margin-right:auto;font-size:12px;color:var(--muted)">移入回收站 · 可从系统回收站还原</span>
+      <button class="btn" data-close="maskDup">取消</button>
+      <button class="btn danger" id="btnDoDup" disabled>确认清理</button>
     </footer>
   </div>
 </div>

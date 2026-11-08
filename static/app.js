@@ -10,6 +10,7 @@ const LEVEL = {
 const MODE_TEXT = {
   recycle: "移入回收站", move: "移动到文件夹", permanent: "永久删除",
   undo: "撤销还原", "trash-empty": "清空回收站", oneclick: "一键清理",
+  dup: "重复文件清理",
 };
 function lv(x) { return LEVEL[x.level || x.cat] || LEVEL.data; }
 function isDeletable(x) { return x.deletable !== false && (x.level || x.cat) !== "protected"; }
@@ -33,6 +34,7 @@ const state = {
   lastManifest: "",
   config: null, configLoaded: false,
   oneclick: null,
+  dup: { groups: [], loaded: false, chosen: new Set(), keep: {}, partial: false, busy: false },
 };
 
 function fmt(n){
@@ -194,6 +196,7 @@ function renderStats(){
   $("#cBig").textContent = state.big.length;
   $("#cErr").textContent = state.errors.length;
   $("#cHist").textContent = state.history.length;
+  $("#cDup").textContent = state.dup.groups.length;
   const oc = $("#btnOneClick");
   if (oc){
     oc.disabled = !state.scanned;
@@ -670,6 +673,7 @@ async function loadConfig(){
   $("#cfgDest").value = r.config.dest || "";
   $("#cfgPort").value = r.config.port || "";
   $("#cfgDupMin").value = (r.config.dup || {}).minSizeMB;
+  $("#cfgDupBudget").value = (r.config.dup || {}).hashBudgetSec;
   $("#cfgMsg").textContent = `${rules.length} 条自定义规则生效中 · 配置文件：${r.path}`;
 }
 
@@ -707,13 +711,17 @@ async function saveConfig(){
   }
   const port = parseInt($("#cfgPort").value, 10);
   const dupMin = parseInt($("#cfgDupMin").value, 10);
+  const dupBudget = parseInt($("#cfgDupBudget").value, 10);
   const btn = $("#btnCfgSave");
   btn.disabled = true; btn.textContent = "保存中…";
   try {
     const r = await api("/api/config", {
       port: isNaN(port) ? $("#cfgPort").value : port,
       dest: $("#cfgDest").value.trim(),
-      dup: { minSizeMB: isNaN(dupMin) ? 10 : dupMin },
+      dup: {
+        minSizeMB: isNaN(dupMin) ? 10 : dupMin,
+        hashBudgetSec: isNaN(dupBudget) ? 30 : dupBudget,
+      },
       rules,
     });
     state.config = r.config;
@@ -801,6 +809,168 @@ async function doOneClick(){
   } finally {
     btn.disabled = false; btn.textContent = "确认执行";
     updateOneClickBtn();
+  }
+}
+
+/* ---------- 重复文件（R1） ---------- */
+function fmtDay(sec){
+  const d = new Date(sec * 1000);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function dupKeepOf(g){ return state.dup.keep[g.hash] || g.keepSuggestion; }
+function dupTargets(){
+  const out = [];
+  state.dup.groups.forEach(g => {
+    if (!state.dup.chosen.has(g.hash)) return;
+    const keep = dupKeepOf(g);
+    (g.copies || []).forEach(cp => {
+      if (cp.p !== keep) out.push({ p: cp.p, s: g.size });
+    });
+  });
+  return out;
+}
+function updateDupBar(){
+  const tg = dupTargets();
+  const bytes = tg.reduce((a, x) => a + x.s, 0);
+  const n = state.dup.chosen.size;
+  $("#dupSelInfo").textContent = n
+    ? `已选 ${n} 组 · 将删除 ${tg.length} 个文件 · 释放 ${fmt(bytes)}`
+    : "未选择任何重复组";
+  $("#btnDupClean").disabled = !tg.length || state.dup.busy;
+}
+function renderDup(){
+  const list = $("#dupList");
+  const groups = state.dup.groups || [];
+  if (!groups.length){
+    list.innerHTML = `<div class="empty-state"><div class="big">没有发现重复文件</div>${
+      state.dup.loaded ? "当前条件下没有内容完全一致的文件" : "点上方「扫描重复文件」开始"}</div>`;
+    $("#dupSummary").textContent = "";
+    updateDupBar();
+    return;
+  }
+  list.innerHTML = groups.map(g => {
+    const on = state.dup.chosen.has(g.hash);
+    const keep = dupKeepOf(g);
+    const rows = (g.copies || []).map(cp => `
+      <div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:12.5px">
+        <label class="chk" style="margin:0;white-space:nowrap;min-width:74px">
+          <input type="radio" name="k-${esc(g.hash)}" class="dup-k" data-h="${esc(g.hash)}" data-p="${esc(cp.p)}" ${cp.p === keep ? "checked" : ""}>
+          <span style="color:${cp.p === keep ? "var(--ok)" : "var(--muted)"}">${cp.p === keep ? "保留" : "删除"}</span>
+        </label>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(cp.p)}">${esc(cp.p)}</span>
+        <span style="color:var(--muted);white-space:nowrap">${fmtDay(cp.m)}</span>
+      </div>`).join("");
+    return `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
+      <label class="chk" style="margin:0">
+        <input type="checkbox" class="dup-g" data-h="${esc(g.hash)}" ${on ? "checked" : ""}>
+        <span><b>${fmt(g.size)}</b> × ${g.count} 份 · 可释放 <b style="color:var(--ok)">${fmt(g.reclaimable)}</b></span>
+      </label>
+      <div style="margin-top:6px;padding-left:24px">${rows}</div>
+    </div>`;
+  }).join("");
+  const total = groups.reduce((a, g) => a + g.reclaimable, 0);
+  $("#dupSummary").innerHTML = `共 <b>${groups.length}</b> 组 · 可释放 <b>${fmt(total)}</b>` +
+    (state.dup.partial ? ` <span style="color:var(--warn)">（已达时间预算，结果为部分结果）</span>` : "");
+  updateDupBar();
+}
+async function loadDup(){
+  try {
+    const r = await api("/api/dup/result");
+    state.dup.groups = r.groups || [];
+    state.dup.partial = !!r.partial;
+    state.dup.loaded = true;
+    state.dup.keep = {};
+    state.dup.chosen = new Set();
+    (r.groups || []).forEach(g => {
+      state.dup.keep[g.hash] = g.keepSuggestion;
+      state.dup.chosen.add(g.hash);
+    });
+    const sk = r.skipped || {};
+    $("#dupStatus").textContent =
+      `扫描 ${r.scannedFiles || 0} 个文件 · 用时 ${((r.costMs || 0) / 1000).toFixed(1)}s` +
+      ` · 跳过硬链接 ${sk.hardlink || 0} / 云盘占位 ${sk.cloud || 0}`;
+    renderDup();
+    renderStats();
+  } catch(e){
+    state.dup.groups = [];
+    state.dup.loaded = false;
+    renderDup();
+  }
+}
+async function dupScan(){
+  if (state.dup.busy) return;
+  const min = parseFloat($("#dupMin").value) || 10;
+  state.dup.busy = true;
+  $("#btnDupScan").disabled = true;
+  $("#dupStatus").textContent = "正在枚举候选文件…";
+  try {
+    await api("/api/dup/scan", { minSizeMB: min, fresh: true });
+    const t0 = Date.now();
+    while (Date.now() - t0 < 180000){
+      const st = await api("/api/dup/status");
+      if (st.phase) $("#dupStatus").textContent = st.phase + "…";
+      if (!st.running){
+        if (st.error) throw new Error(st.error);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    await loadDup();
+    state.historyLoaded = false;
+  } catch(e){
+    $("#dupStatus").textContent = "扫描失败：" + e.message;
+    toast("重复文件扫描失败：" + e.message, 5000);
+  } finally {
+    state.dup.busy = false;
+    $("#btnDupScan").disabled = false;
+    updateDupBar();
+  }
+}
+function openDupModal(){
+  const tg = dupTargets();
+  if (!tg.length) return toast("没有可清理的项");
+  state.dup.pending = tg;
+  const bytes = tg.reduce((a, x) => a + x.s, 0);
+  $("#dupDelCount").textContent = tg.length;
+  $("#dupDelSize").textContent = fmt(bytes);
+  $("#dupDelList").innerHTML = tg.map(x => `
+    <div class="lrow"><span class="s">${fmt(x.s)}</span>
+      <span class="p" title="${esc(x.p)}">${esc(x.p)}</span></div>`).join("");
+  $("#dupCf").checked = false;
+  $("#btnDoDup").disabled = true;
+  $("#maskDup").classList.add("on");
+}
+async function doDupClean(){
+  if (!state.dup.pending || !state.dup.pending.length) return;
+  const keep = state.dup.groups
+    .filter(g => state.dup.chosen.has(g.hash))
+    .map(g => dupKeepOf(g));
+  state.dup.busy = true;
+  $("#btnDoDup").disabled = true;
+  $("#btnDoDup").textContent = "清理中…";
+  try {
+    const r = await api("/api/dup/clean", {
+      groupHashes: Array.from(state.dup.chosen),
+      keepPolicy: "manual",
+      keepPaths: keep,
+    });
+    $("#maskDup").classList.remove("on");
+    state.sessionFreed += r.freed || 0;
+    $("#sFreed").textContent = fmt(state.sessionFreed);
+    toast(`已清理 ${r.okCount} 项${r.failCount ? "，失败 " + r.failCount + " 项" : ""}，释放 ${fmt(r.freed)}`, 5000);
+    const bad = (r.results || []).filter(x => !x.ok);
+    if (bad.length) console.warn("部分项未清理成功", bad);
+    state.dup.busy = false;
+    state.dup.loaded = false;
+    await dupScan();
+  } catch(e){
+    toast("清理失败：" + e.message, 5000);
+  } finally {
+    state.dup.busy = false;
+    $("#btnDoDup").disabled = false;
+    $("#btnDoDup").textContent = "确认清理";
+    updateDupBar();
   }
 }
 
@@ -903,10 +1073,12 @@ function switchTab(name){
   $$(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab === name));
   const isHist = name === "history";
   const isSet = name === "settings";
-  $("#listWrap").style.display = (isHist || isSet) ? "none" : "block";
+  const isDup = name === "dup";
+  $("#listWrap").style.display = (isHist || isSet || isDup) ? "none" : "block";
   $("#histWrap").style.display = isHist ? "block" : "none";
   $("#setWrap").style.display = isSet ? "block" : "none";
-  $("#filterBar").style.display = (isHist || isSet) ? "none" : "flex";
+  $("#dupWrap").style.display = isDup ? "block" : "none";
+  $("#filterBar").style.display = (isHist || isSet || isDup) ? "none" : "flex";
   state.expanded.clear();
   state.cursor = -1;
   if (isHist){
@@ -918,6 +1090,11 @@ function switchTab(name){
     $("#truncBar").classList.remove("on");
     $("#truncBar").innerHTML = "";
     loadConfig().catch(e => toast(e.message));
+  } else if (isDup){
+    $("#truncBar").classList.remove("on");
+    $("#truncBar").innerHTML = "";
+    if (!state.dup.loaded) loadDup().catch(() => renderDup());
+    else renderDup();
   } else {
     renderTable();
   }
@@ -1000,6 +1177,24 @@ async function restartAdmin(){
   }
 }
 $("#btnRestartAdmin").addEventListener("click", restartAdmin);
+
+/* ---------- 重复文件事件 ---------- */
+$("#btnDupScan").addEventListener("click", dupScan);
+$("#btnDupClean").addEventListener("click", openDupModal);
+$("#btnDoDup").addEventListener("click", doDupClean);
+$("#dupCf").addEventListener("change", e => { $("#btnDoDup").disabled = !e.target.checked; });
+$("#dupList").addEventListener("change", e => {
+  const t = e.target;
+  if (t.classList.contains("dup-g")){
+    const h = t.dataset.h;
+    if (t.checked) state.dup.chosen.add(h);
+    else state.dup.chosen.delete(h);
+    updateDupBar();
+  } else if (t.classList.contains("dup-k")){
+    state.dup.keep[t.dataset.h] = t.dataset.p;
+    renderDup();
+  }
+});
 
 /* ---------- 键盘（R8） ---------- */
 document.addEventListener("keydown", e => {
