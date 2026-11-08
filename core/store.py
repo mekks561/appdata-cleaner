@@ -20,6 +20,7 @@ class _State(object):
         self._result = None
         self._running = False
         self._phase = ""
+        self._seq = 0
 
     def begin(self, ctx, root):
         with self._lock:
@@ -33,6 +34,7 @@ class _State(object):
         with self._lock:
             if result is not None:
                 self._result = result
+                self._seq += 1
             if phase is not None:
                 self._phase = phase
             self._running = False
@@ -57,6 +59,11 @@ class _State(object):
     def running(self):
         with self._lock:
             return self._running
+
+    def seq(self):
+        """结果版本号：每产出一份新结果 +1（时间戳只有秒精度，靠它判定新鲜度）。"""
+        with self._lock:
+            return self._seq
 
     def status(self):
         with self._lock:

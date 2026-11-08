@@ -8,6 +8,7 @@
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -38,7 +39,7 @@ CFG_PATH = config.config_path(APP_DIR)
 CFG, CFG_WARNINGS = config.load(APP_DIR)
 rules.apply_user_rules(CFG["rules"])
 
-PORT = int(CFG["port"])
+PORT = int(os.environ.get("APP_PORT") or CFG["port"])
 
 USER_HOME = os.path.expanduser("~")
 DEFAULT_ROOT = os.path.join(USER_HOME, "AppData")
@@ -190,6 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                 "configPath": CFG_PATH,
                 "customRules": rules.user_rule_count(),
                 "configWarnings": CFG_WARNINGS,
+                "takeover": "--takeover" in sys.argv[1:],
             })
         if u.path == "/api/scan/status":
             return self._json(STATE.status())
@@ -197,7 +199,9 @@ class Handler(BaseHTTPRequestHandler):
             res = STATE.result()
             if not res:
                 return self._json({"error": "还没有扫描结果"}, 404)
-            return self._json(res)
+            out = dict(res)
+            out["seq"] = STATE.seq()
+            return self._json(out)
         if u.path == "/api/history":
             q = parse_qs(u.query or "")
             try:
@@ -256,6 +260,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_oneclick_preview()
         if u.path == "/api/oneclick":
             return self._post_oneclick(body)
+        if u.path == "/api/restart-admin":
+            return self._post_restart_admin()
         if u.path == "/api/openrecyclebin":
             try:
                 os.system("explorer.exe shell:RecycleBinFolder")
@@ -503,6 +509,46 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as ex:
             return self._json({"error": str(ex)}, 500)
 
+    def _post_restart_admin(self):
+        """以管理员身份重启服务。
+
+        流程：本进程拉起一个带 --takeover 的提权子进程（触发 UAC），
+        子进程循环等待端口释放后接管；本进程轮询到子进程就绪后退出。
+        用户在 UAC 点「否」时子进程不启动，本进程保持原样继续服务。
+        """
+        if is_admin():
+            return self._json({"ok": False, "error": "当前已是管理员权限，无需重启"}, 400)
+        py = sys.executable
+        srv = os.path.abspath(__file__)
+        ps = ('Start-Process -FilePath "%s" -ArgumentList \'"%s","--takeover"\' '
+              '-WorkingDirectory "%s" -Verb RunAs' % (py, srv, APP_DIR))
+        try:
+            subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
+                             close_fds=True,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as ex:
+            return self._json({"error": "无法启动提权进程：%s" % ex}, 500)
+
+        def _wait_and_exit():
+            deadline = time.time() + 60
+            while time.time() < deadline:
+                try:
+                    with urllib.request.urlopen(
+                            "http://127.0.0.1:%d/api/info" % PORT, timeout=1.5) as r:
+                        if json.loads(r.read().decode("utf-8")).get("takeover"):
+                            time.sleep(0.4)
+                            os._exit(0)
+                except Exception:
+                    pass
+                time.sleep(0.6)
+
+        threading.Thread(target=_wait_and_exit, daemon=True).start()
+        return self._json({
+            "ok": True,
+            "message": "请在弹出的 UAC 窗口点「是」。确认后服务将以管理员身份自动重启，"
+                       "本页面会自动恢复；点「否」则保持现状。",
+        })
+
 
 def _port_busy():
     try:
@@ -533,23 +579,37 @@ def main():
     print(" %s  v%s  (build %s)" % (APP_NAME, APP_VERSION, BUILD))
     print(" 地址: %s" % url)
 
-    try:
-        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    except OSError:
-        ver = _port_busy()
-        print("-" * 60)
-        if ver:
-            print(" 已有实例在运行（v%s），直接在浏览器打开上面的地址即可。" % ver)
-        else:
-            print(" 端口 %d 被其他程序占用，无法启动。" % PORT)
-            print(" 可先关闭占用该端口的程序，或改用其他端口。")
-        print("=" * 60)
-        if ver:
+    takeover = "--takeover" in sys.argv[1:]
+    srv = None
+    if takeover:
+        # 顶替模式：等旧实例退出释放端口（最多 30 秒）
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+                break
+            except OSError:
+                time.sleep(0.7)
+        if srv is None:
+            print(" 接管失败：等待 %d 秒后端口 %d 仍被占用。" % (30, PORT))
+            return
+    else:
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        except OSError:
+            ver = _port_busy()
+            print("-" * 60)
+            if ver:
+                print(" 已有实例在运行（v%s），直接在浏览器打开上面的地址即可。" % ver)
+            else:
+                print(" 端口 %d 被其他程序占用，无法启动。" % PORT)
+                print(" 可先关闭占用该端口的程序，或改用其他端口。")
+            print("=" * 60)
             try:
                 webbrowser.open(url)
             except Exception:
                 pass
-        return
+            return
 
     print(" 扫描根目录: %s" % DEFAULT_ROOT)
     print(" 数据目录  : %s" % DATA_DIR)
@@ -560,7 +620,7 @@ def main():
     print(" 默认删除方式: 移入回收站（可从回收站还原）")
     print(" 关闭本窗口即停止服务")
     print("=" * 60)
-    if not os.environ.get("APP_NO_BROWSER"):
+    if not os.environ.get("APP_NO_BROWSER") and not takeover:
         try:
             webbrowser.open(url)
         except Exception:

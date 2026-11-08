@@ -44,9 +44,9 @@ function fmt(n){
   return (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " " + u[i];
 }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function toast(msg){
+function toast(msg, ms){
   const t = $("#toast"); t.textContent = msg; t.classList.add("on");
-  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), 2800);
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), ms || 2800);
 }
 async function api(path, body){
   const opt = body ? {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)} : {};
@@ -968,6 +968,38 @@ $("#btnOneClick").addEventListener("click", openOneClick);
 $("#btnDoOneClick").addEventListener("click", doOneClick);
 $("#btnCfgSave").addEventListener("click", saveConfig);
 $("#btnCfgReload").addEventListener("click", () => loadConfig().catch(e => toast(e.message)));
+
+/* ---------- 以管理员身份重启 ---------- */
+async function restartAdmin(){
+  const btn = $("#btnRestartAdmin");
+  btn.disabled = true; btn.textContent = "等待 UAC 确认…";
+  try {
+    const r = await api("/api/restart-admin", {});
+    if (!r.ok){ toast(r.error || "无法重启"); btn.disabled = false; btn.textContent = "以管理员身份重启"; return; }
+    toast(r.message || "请在 UAC 弹窗点「是」", 6000);
+    // 轮询等待新实例接管（服务短暂掉线属正常），恢复后刷新页面
+    const deadline = Date.now() + 45000;
+    const t = setInterval(async () => {
+      try {
+        const info = await api("/api/info");
+        if (info && info.admin){
+          clearInterval(t);
+          toast("已以管理员身份重启 ✔", 3000);
+          setTimeout(() => location.reload(), 800);
+        }
+      } catch(_){ /* 旧实例退出中，继续等 */ }
+      if (Date.now() > deadline){
+        clearInterval(t);
+        btn.disabled = false; btn.textContent = "以管理员身份重启";
+        toast("未检测到提权重启（可能 UAC 被取消），服务保持原样");
+      }
+    }, 1200);
+  } catch(e){
+    toast(e.message);
+    btn.disabled = false; btn.textContent = "以管理员身份重启";
+  }
+}
+$("#btnRestartAdmin").addEventListener("click", restartAdmin);
 
 /* ---------- 键盘（R8） ---------- */
 document.addEventListener("keydown", e => {

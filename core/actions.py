@@ -44,7 +44,12 @@ class SHFILEOP(ctypes.Structure):
 # ---------------- 底层动作 ----------------
 
 def recycle(paths):
-    """移入回收站（可还原）。失败抛 OSError，消息已是人话。"""
+    """移入回收站（可还原）。失败抛 OSError，消息已是人话。
+
+    注意：SHFileOperationW 存在「实际已删掉、却返回非 0 码」的情况
+    （实测：目标目录已进回收站但返回 2，且只在特定路径上复现）。
+    因此非 0 码时以「路径是否真的还在」为准 —— 返回码只用于生成提示语。
+    """
     buf = "\0".join(paths) + "\0\0"
     op = SHFILEOP()
     op.hwnd = None
@@ -54,10 +59,14 @@ def recycle(paths):
     op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
                  | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR)
     res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+    if res == 0 and not op.fAnyOperationsAborted:
+        return
+    left = [p for p in paths if os.path.exists(safe_path(p))]
+    if not left:
+        return                          # 已经全清掉了，返回码不可信
     if res != 0:
         raise OSError(0, shell_message(res))
-    if op.fAnyOperationsAborted:
-        raise OSError(0, "操作被系统中止")
+    raise OSError(0, "操作被系统中止")
 
 
 def force_remove(path):

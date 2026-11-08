@@ -25,6 +25,9 @@ def run():
          cfg.get("config", {}).get("port"))
     c.ok("含 rules 数组", isinstance(cfg.get("config", {}).get("rules"), list))
     orig_port = cfg["config"]["port"]
+    # 以「服务实际监听端口」为准：测试可能用 APP_PORT 覆盖配置端口
+    _s, _info = get("/api/info")
+    run_port = _info.get("port") or orig_port
 
     st, body = post("/api/config", {"port": 80})
     c.eq("非法端口被拒 400", st, 400)
@@ -34,7 +37,7 @@ def run():
 
     # 合法保存（端口不变，避免污染下次测试）
     st, body = post("/api/config", {
-        "port": orig_port, "dest": r"D:\AppDataBackup", "rules": [
+        "port": run_port, "dest": r"D:\AppDataBackup", "rules": [
             {"segments": ["local", "faketest", "mycache"], "level": "protected",
              "note": "测试用：假想的用户数据"},
         ]})
@@ -45,7 +48,8 @@ def run():
     # 用户 protected 立即生效：预览一个该路径下的目录应被标 blocked
     st, info = get("/api/info")
     c.eq("info.customRules 同步", info.get("customRules"), 1)
-    st, body = post("/api/config", {"port": orig_port, "dest": cfg["config"]["dest"], "rules": []})
+    c.ok("info 含 takeover 标记（重启接管）", "takeover" in info, info.get("takeover"))
+    st, body = post("/api/config", {"port": run_port, "dest": cfg["config"]["dest"], "rules": []})
     c.eq("清空规则恢复", body.get("customRules"), 0)
 
     # —— 一键清理 ——

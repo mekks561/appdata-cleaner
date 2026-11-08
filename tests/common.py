@@ -8,7 +8,7 @@ import time
 import urllib.error
 import urllib.request
 
-BASE = "http://127.0.0.1:8765"
+BASE = os.environ.get("TEST_BASE", "http://127.0.0.1:8765")
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.join(APP, "testdata")
 MB = 1024 * 1024
@@ -61,22 +61,31 @@ def fresh_testdata():
 
 
 def scan(root=None, max_depth=3, hot_mb=1, big_mb=5, timeout=90, fresh=False):
-    """触发扫描并等待完成，返回结果字典。"""
+    """触发扫描并等待完成，返回结果字典。
+
+    注意：POST /api/scan 只是把任务丢进线程，STATE 里的旧结果还会短暂可读。
+    所以不能「看到 not running 就取结果」—— 必须等 scannedAt 变化，
+    否则会拿到上一次扫描的旧快照（曾经导致一键清理测到真实 AppData）。
+    """
     root = root or ROOT
+    _s, before = get("/api/result")
+    before_seq = (before or {}).get("seq")
+    if before_seq is None:            # 兼容无 seq 的旧实例
+        before_seq = (before or {}).get("scannedAt")
+        key = "scannedAt"
+    else:
+        key = "seq"
     st, body = post("/api/scan", {"root": root, "maxDepth": max_depth,
                                   "hotMB": hot_mb, "bigMB": big_mb, "fresh": fresh})
     if st != 200:
         raise RuntimeError("扫描启动失败: %s %s" % (st, body))
     t0 = time.time()
     while time.time() - t0 < timeout:
-        _s, status = get("/api/scan/status")
-        if not status.get("running"):
-            break
+        _s, res = get("/api/result")
+        if res and res.get(key) is not None and res.get(key) != before_seq:
+            return res
         time.sleep(0.15)
-    st, res = get("/api/result")
-    if st != 200:
-        raise RuntimeError("扫描未产出结果: %s" % res)
-    return res
+    raise RuntimeError("扫描超时（%.0fs）未产出结果" % timeout)
 
 
 def preview(paths):
