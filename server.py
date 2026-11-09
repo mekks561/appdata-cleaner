@@ -23,7 +23,7 @@ if sys.version_info < (3, 9):
 
 APP_NAME = "AppData 磁盘清理助手"
 APP_VERSION = "1.3.0"
-BUILD = "2026-11-06"
+BUILD = "2026-11-09"
 
 from core import actions, config, dupfind, history, rules, scan  # noqa: E402
 from core.dupfind import DUP  # noqa: E402
@@ -32,7 +32,12 @@ from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(APP_DIR, "static")
+# PyInstaller onefile：静态资源在解压目录（只读），config/logs/cache 必须放 exe 旁边（可写）
+FROZEN = getattr(sys, "frozen", False)
+RESOURCE_DIR = getattr(sys, "_MEIPASS", APP_DIR)
+if FROZEN:
+    APP_DIR = os.path.dirname(os.path.abspath(sys.executable))
+STATIC_DIR = os.path.join(RESOURCE_DIR, "static")
 LOG_DIR = os.path.join(APP_DIR, "logs")
 DATA_DIR = os.path.join(APP_DIR, "cache")
 
@@ -75,6 +80,31 @@ def is_admin():
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False
+
+
+def _launch_scan(root, depth, hot, big, fresh):
+    """在后台线程跑一次扫描（路由与启动预热共用）。调用方保证参数已校验。"""
+    holder = {}
+
+    def begin(ctx, r):
+        holder["ctx"] = ctx
+        STATE.begin(ctx, r)
+
+    def finish(result, ex):
+        ctx = holder.get("ctx")
+        if ex is not None:
+            STATE.fail(getattr(ctx, "phase", "扫描失败"))
+        else:
+            STATE.finish(result=result)
+
+    def job():
+        try:
+            scan.run_scan(root, depth, hot, big, on_begin=begin, on_finish=finish,
+                          fresh=fresh, cache_dir=DATA_DIR)
+        except Exception:
+            pass
+
+    threading.Thread(target=job, daemon=True).start()
 
 
 def write_log(mode, dest, results, freed, before, after, manifest_id=""):
@@ -211,6 +241,18 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 50
             return self._json({"items": history.read(LOG_DIR, limit), "logDir": LOG_DIR})
+        if u.path == "/api/trend":
+            q = parse_qs(u.query or "")
+            try:
+                days = int((q.get("days") or ["30"])[0])
+            except ValueError:
+                days = 30
+            data = history.trend(LOG_DIR, days)
+            return self._json({
+                "days": data,
+                "totalFreed": sum(d["freed"] for d in data),
+                "totalOps": sum(d["ops"] for d in data),
+            })
         if u.path == "/api/trash/size":
             return self._json(actions.recycle_bin_size())
         if u.path == "/api/dup/status":
@@ -301,27 +343,7 @@ class Handler(BaseHTTPRequestHandler):
         hot = max(0.001, float(body.get("hotMB") or 50))
         big = max(0.001, float(body.get("bigMB") or 100))
         fresh = bool(body.get("fresh"))
-        holder = {}
-
-        def begin(ctx, r):
-            holder["ctx"] = ctx
-            STATE.begin(ctx, r)
-
-        def finish(result, ex):
-            ctx = holder.get("ctx")
-            if ex is not None:
-                STATE.fail(getattr(ctx, "phase", "扫描失败"))
-            else:
-                STATE.finish(result=result)
-
-        def job():
-            try:
-                scan.run_scan(root, depth, hot, big, on_begin=begin, on_finish=finish,
-                              fresh=fresh, cache_dir=DATA_DIR)
-            except Exception:
-                pass
-
-        threading.Thread(target=job, daemon=True).start()
+        _launch_scan(root, depth, hot, big, fresh)
         return self._json({"ok": True, "version": APP_VERSION, "root": root,
                            "fresh": fresh})
 
@@ -533,10 +555,12 @@ class Handler(BaseHTTPRequestHandler):
         """
         if is_admin():
             return self._json({"ok": False, "error": "当前已是管理员权限，无需重启"}, 400)
-        py = sys.executable
-        srv = os.path.abspath(__file__)
-        ps = ('Start-Process -FilePath "%s" -ArgumentList \'"%s","--takeover"\' '
-              '-WorkingDirectory "%s" -Verb RunAs' % (py, srv, APP_DIR))
+        if FROZEN:
+            target, args = sys.executable, '"--takeover"'
+        else:
+            target, args = sys.executable, '"%s","--takeover"' % os.path.abspath(__file__)
+        ps = ('Start-Process -FilePath "%s" -ArgumentList \'%s\' '
+              '-WorkingDirectory "%s" -Verb RunAs' % (target, args, APP_DIR))
         try:
             subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
                              close_fds=True,
@@ -746,6 +770,20 @@ def main():
             webbrowser.open(url)
         except Exception:
             pass
+
+    # R4 启动预热：起来就后台跑一次增量扫描，打开页面即有数据。
+    # 测试环境用 APP_NO_WARMUP=1 关掉，避免与测试扫描抢全局 STATE。
+    if not os.environ.get("APP_NO_WARMUP"):
+        def _warmup():
+            time.sleep(0.5)
+            if STATE.running() or STATE.result():
+                return
+            if not os.path.isdir(DEFAULT_ROOT):
+                return
+            _launch_scan(DEFAULT_ROOT, 3, 50, 100, False)
+            print(" 已在后台预热扫描（增量），完成后打开页面即有数据")
+        threading.Thread(target=_warmup, daemon=True).start()
+
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

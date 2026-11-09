@@ -27,3 +27,8 @@ Desktop.ini
 config.json
 config.json.bak
 config.json.bad
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec

@@ -83,6 +83,62 @@ def read(log_dir, limit=50):
     return out
 
 
+def trend(log_dir, days=30):
+    """按天聚合近 N 天的清理记录，供趋势图使用。
+
+    返回 [{date:"MM-DD", ops, ok, freed, items}]，日期升序、缺数据的天补零。
+    freed 取 freedBySize（按体积实算的释放量，比磁盘 free 差值稳定）；
+    undo 还原记为负贡献（freedBySize 本身就是还原的字节数）。
+    """
+    days = max(1, min(120, int(days or 30)))
+    try:
+        names = [n for n in os.listdir(log_dir) if HISTORY_RE.match(n)]
+    except OSError:
+        names = []
+    # 只读落在窗口内的文件：文件名 clean-YYYYMMDD.jsonl 本身就是日期
+    cutoff = time.time() - days * 86400
+    per_day = {}
+    for n in names:
+        try:
+            day_ts = time.mktime(time.strptime(n[6:14], "%Y%m%d"))
+        except ValueError:
+            continue
+        if day_ts < cutoff - 86400:      # 文件可能跨窗口边界（当天的记录），放宽一天
+            continue
+        try:
+            with open(os.path.join(log_dir, n), "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    ts = rec.get("epoch") or 0
+                    d = time.strftime("%Y%m%d", time.localtime(ts or day_ts))
+                    cell = per_day.setdefault(d, {"ops": 0, "ok": 0, "freed": 0})
+                    cell["ops"] += 1
+                    cell["ok"] += int(rec.get("ok") or 0)
+                    if rec.get("mode") == "undo":
+                        cell["freed"] -= int(rec.get("freedBySize") or 0)
+                    else:
+                        cell["freed"] += int(rec.get("freedBySize") or 0)
+        except OSError:
+            continue
+
+    out = []
+    for i in range(days - 1, -1, -1):
+        ts = time.time() - i * 86400
+        d = time.strftime("%Y%m%d", time.localtime(ts))
+        cell = per_day.get(d, {"ops": 0, "ok": 0, "freed": 0})
+        out.append({
+            "date": time.strftime("%m-%d", time.localtime(ts)),
+            "ops": cell["ops"], "ok": cell["ok"], "freed": cell["freed"],
+        })
+    return out
+
+
 # ---------------- manifest ----------------
 
 def new_manifest(log_dir, items, root, extra=None):

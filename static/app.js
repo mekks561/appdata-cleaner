@@ -35,6 +35,7 @@ const state = {
   config: null, configLoaded: false,
   oneclick: null,
   dup: { groups: [], loaded: false, chosen: new Set(), keep: {}, partial: false, busy: false },
+  bigView: "file",
 };
 
 function fmt(n){
@@ -80,7 +81,15 @@ async function init(){
     loadTrashSize();
     loadConfig().catch(() => {});
     const st = await api("/api/scan/status");
-    if (st.done && !st.running) await loadResult(true);
+    if (st.running){
+      // R4 启动预热正在跑：直接接上进度条轮询
+      $("#progress").classList.add("on");
+      $("#btnScan").disabled = true; $("#btnRescan").disabled = true;
+      $("#pPhase").textContent = "后台预热中…";
+      polling = setInterval(poll, 600);
+    } else if (st.done){
+      await loadResult(true);
+    }
   } catch(e){
     toast("无法连接本地服务：" + e.message);
   }
@@ -281,9 +290,59 @@ function renderTrunc(){
   bar.classList.toggle("on", !!html);
 }
 
+/* ---------- 大文件按扩展名聚合（1.3 R7） ---------- */
+function extOf(p){
+  const name = String(p || "").split(/[\\/]/).pop() || "";
+  const i = name.lastIndexOf(".");
+  return i > 0 ? name.slice(i).toLowerCase() : "(无后缀)";
+}
+function extGroups(){
+  const map = new Map();
+  for (const f of state.big){
+    const ext = extOf(f.p);
+    let g = map.get(ext);
+    if (!g){ g = { ext, s: 0, count: 0, del: 0, sel: 0 }; map.set(ext, g); }
+    g.s += f.s || 0;
+    g.count += 1;
+    if (isDeletable(f)) g.del += 1;
+    if (state.selected.has(f.p)) g.sel += 1;
+  }
+  return Array.from(map.values()).sort((a, b) => b.s - a.s);
+}
+function extRows(){
+  const groups = extGroups();
+  const max = Math.max(...groups.map(g => g.s), 1);
+  return groups.map(g => ({
+    extRow: true, ext: g.ext, s: g.s, f: g.count, del: g.del, sel: g.sel,
+    p: `${g.count} 个文件${g.del < g.count ? `（${g.del} 个可清理）` : ""}`,
+    n: g.ext, indent: 0, _max: max,
+  }));
+}
+function toggleExt(ext, on){
+  for (const f of state.big){
+    if (extOf(f.p) !== ext || !isDeletable(f)) continue;
+    if (on) state.selected.set(f.p, { s: f.s || 0, level: f.level || f.cat });
+    else state.selected.delete(f.p);
+  }
+  renderSel(); syncExtChecks();
+}
+function syncExtChecks(){
+  const groups = extGroups();
+  document.querySelectorAll(".extchk").forEach(c => {
+    const g = groups.find(x => x.ext === c.dataset.ext);
+    if (g) c.checked = g.sel > 0 && g.sel >= g.del;
+  });
+}
+async function toggleBigView(){
+  state.bigView = state.bigView === "file" ? "ext" : "file";
+  $("#btnBigView").textContent = state.bigView === "file" ? "按扩展名聚合" : "按文件列表";
+  renderTable();
+}
+
 function renderTable(){
   const tb = $("#tbody");
   if (state.tab === "history"){ renderHistory(); return; }
+  if (state.tab === "big" && state.bigView === "ext"){ renderExtTable(); return; }
   const rows = flatRows();
   state.rows = rows;
   if (state.cursor >= rows.length) state.cursor = rows.length - 1;
@@ -330,6 +389,28 @@ function renderTable(){
       <td><button class="btn ghost" data-open="${esc(r.p)}">位置</button></td>
     </tr>`;
   }).join("");
+}
+
+function renderExtTable(){
+  const tb = $("#tbody");
+  const rows = extRows();
+  state.rows = rows;
+  renderTrunc();
+  if (!rows.length){
+    tb.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="big">还没有数据</div>扫描后按扩展名聚合展示大文件</div></td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(r => `<tr class="${r.sel > 0 ? "sel" : ""}">
+      <td><input type="checkbox" class="extchk" data-ext="${esc(r.ext)}" title="勾选该类型的全部可清理文件"></td>
+      <td><div class="namecell"><span class="nm">${esc(r.ext)}</span></div></td>
+      <td><div class="pth">${esc(r.p)}</div></td>
+      <td class="num">${fmt(r.s)}</td>
+      <td><div class="bar"><i class="data" style="width:${Math.max(1, r.s / r._max * 100)}%"></i></div></td>
+      <td><span class="tag data">聚合</span></td>
+      <td class="num">${r.f.toLocaleString()}</td>
+      <td></td>
+    </tr>`).join("");
+  syncExtChecks();
 }
 
 function renderChart(){
@@ -559,10 +640,46 @@ async function loadHistory(){
     state.history = r.items || [];
     state.historyLoaded = true;
     $("#cHist").textContent = state.history.length;
+    renderTrend().catch(() => {});
     renderHistory();
   } catch(e){
     toast("历史读取失败：" + e.message);
   }
+}
+
+/* ---------- 清理趋势图（1.3 R5，纯 SVG 零依赖） ---------- */
+async function renderTrend(){
+  const r = await api("/api/trend?days=30");
+  const days = r.days || [];
+  const box = $("#trendChart");
+  const sum = $("#trendSum");
+  sum.textContent = r.totalOps
+    ? `30 天共 ${r.totalOps} 次操作 · 按体积累计释放 ${fmt(r.totalFreed)}`
+    : "还没有清理记录";
+  const hasData = days.some(d => d.ops > 0);
+  if (!hasData){
+    box.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:6px 0 2px">清理一次后，这里会出现每天释放空间的折线</div>';
+    return;
+  }
+  const W = 620, H = 96, P = 6;
+  const maxFreed = Math.max(...days.map(d => d.freed), 1);
+  const n = days.length;
+  const px = i => P + i * (W - P * 2) / (n - 1);
+  const py = v => H - P - Math.max(0, v) / maxFreed * (H - P * 2 - 12);
+  const pts = days.map((d, i) => `${px(i).toFixed(1)},${py(d.freed).toFixed(1)}`).join(" ");
+  const area = `${P},${H - P} ` + pts + ` ${W - P},${H - P}`;
+  const ticks = [0, 7, 14, 21, 29].map(i =>
+    `<text x="${px(i)}" y="${H - 1}" font-size="10" fill="#888" text-anchor="middle">${days[i] ? days[i].date : ""}</text>`).join("");
+  const maxDay = days.reduce((a, b) => b.freed >= (a.freed || 0) ? b : a, days[0] || null);
+  const dot = maxDay && maxDay.freed > 0
+    ? `<circle cx="${px(days.indexOf(maxDay))}" cy="${py(maxDay.freed)}" r="3.5" fill="#185FA5"/>
+       <text x="${px(days.indexOf(maxDay))}" y="${py(maxDay.freed) - 7}" font-size="11" fill="#0C447C" text-anchor="middle">${fmt(maxDay.freed)}</text>`
+    : "";
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px;display:block" role="img" aria-label="近30天清理趋势">
+    <polygon points="${area}" fill="rgba(24,95,165,0.12)"/>
+    <polyline points="${pts}" fill="none" stroke="#185FA5" stroke-width="1.8" stroke-linejoin="round"/>
+    <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#ccc" stroke-width="0.5"/>
+    ${ticks}${dot}</svg>`;
 }
 
 function renderHistory(){
@@ -1033,6 +1150,10 @@ document.addEventListener("click", e => {
 });
 
 document.addEventListener("change", e => {
+  if (e.target.classList.contains("extchk")){
+    toggleExt(e.target.dataset.ext, e.target.checked);
+    return;
+  }
   if (e.target.classList.contains("rowchk")){
     const p = e.target.dataset.path;
     if (e.target.checked) state.selected.set(p, { s: +e.target.dataset.size, level: e.target.dataset.level });
@@ -1079,6 +1200,7 @@ function switchTab(name){
   $("#setWrap").style.display = isSet ? "block" : "none";
   $("#dupWrap").style.display = isDup ? "block" : "none";
   $("#filterBar").style.display = (isHist || isSet || isDup) ? "none" : "flex";
+  $("#btnBigView").style.display = name === "big" ? "inline-block" : "none";
   state.expanded.clear();
   state.cursor = -1;
   if (isHist){
@@ -1125,6 +1247,7 @@ $("#verBtn").addEventListener("click", openAbout);
 $("#btnPreview").addEventListener("click", openPreview);
 $("#btnPreview2").addEventListener("click", openPreview);
 $("#btnExport").addEventListener("click", exportCSV);
+$("#btnBigView").addEventListener("click", toggleBigView);
 $("#btnClearSel").addEventListener("click", () => {
   state.selected.clear();
   document.querySelectorAll(".rowchk").forEach(c => { c.checked = false; c.closest("tr").classList.remove("sel"); });

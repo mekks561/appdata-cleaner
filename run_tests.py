@@ -36,7 +36,7 @@ def main():
     if info:
         print("复用已在运行的服务：v%s" % info.get("version"))
     else:
-        env = dict(os.environ, APP_NO_BROWSER="1", PYTHONUTF8="1")
+        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_WARMUP="1", PYTHONUTF8="1")
         proc = subprocess.Popen([sys.executable, "server.py"], cwd=APP, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         for _ in range(60):

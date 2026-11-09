@@ -97,6 +97,7 @@
           <button class="chip" data-f="big">≥1 GB</button>
         </div>
         <div class="spacer"></div>
+        <button class="btn ghost" id="btnBigView" style="display:none" title="在文件列表与扩展名聚合之间切换">按扩展名聚合</button>
         <button class="btn ghost" id="btnExport" title="导出当前筛选后的可见行">导出 CSV</button>
       </div>
 
@@ -122,6 +123,13 @@
       </div>
 
       <div class="tablewrap" id="histWrap" style="display:none">
+        <div id="trendBox" style="padding:12px 16px 8px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+            <h3 style="margin:0;font-size:13px">近 30 天清理趋势</h3>
+            <span id="trendSum" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+          <div id="trendChart"></div>
+        </div>
         <table>
           <thead>
             <tr>
