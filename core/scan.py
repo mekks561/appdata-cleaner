@@ -19,6 +19,12 @@
   · worker 数由 APP_SCAN_WORKERS 控制，=1 时完全退回串行路径，
     输出结构与字段与旧版逐字一致（增量复用 / 快照 / 排行 / 截断统计不变）。
   · 扫描开始时把旧快照留作 diff 基准，扫描结束前与新树按 key 对齐算出变化。
+
+1.4.0 M3 增加全树扩展名聚合（R4）：
+  · 每个目录节点在原本就要做的 scandir 里顺带按扩展名归集本层文件，零额外 IO；
+  · 目录分布归属到「结果树最深层可见目录」，更深的目录并入同一归属，条目数有界；
+  · 增量复用的子树本轮没有进去读文件 → 沿用上次快照的整份统计并标 approx，
+    与 R3「复用即无变化」的近似口径一致；强制全量重扫即可刷新。
 """
 
 import heapq
@@ -36,6 +42,11 @@ HOT_KEEP = 4000         # 内存中最多保留的候选数
 BIG_KEEP = 3000
 ERROR_KEEP = 500
 PROGRESS_BATCH = 8192   # 每累计这么多文件提交一次进度
+
+# 1.4 R4：全树扩展名聚合的展示上限（聚合本身不限类型数，只裁剪输出）
+EXT_SHOW = 40
+EXT_DIR_SHOW = 8
+NO_EXT = "(无后缀)"     # 与前端 extOf() 的口径一致
 
 # 候选收集下限：与界面阈值解耦，保证「这次用 200MB 扫、下次用 10MB 扫」
 # 复用快照时不会漏掉 10~200MB 之间的目录。
@@ -76,6 +87,9 @@ class ScanCtx(object):
         self.big = []
         self.total_hot = 0
         self.total_big = 0
+
+        # 1.4 R4：全树扩展名聚合（ext -> {s, f, dirs: {可见目录: [s, f]}}）
+        self.ext = {}
 
         # 增量
         self.prev = None
@@ -124,6 +138,27 @@ class ScanCtx(object):
             self.big.append(item)
             if len(self.big) > BIG_KEEP:
                 self.big = heapq.nlargest(BIG_KEEP // 2, self.big, key=lambda x: x["s"])
+
+    # ---- 全树扩展名聚合（1.4 R4） ----
+    def add_ext(self, local, owner):
+        """按目录批量提交本层文件的扩展名统计。
+
+        与 add_progress 同思路：每目录只抢一次锁，不给每个文件加锁。
+        owner 是「结果树最深层可见目录」的路径，用来回答「这个类型都藏在哪」。
+        """
+        if not local:
+            return
+        with self.lock:
+            for ext, (sz, cnt) in local.items():
+                g = self.ext.get(ext)
+                if g is None:
+                    g = {"s": 0, "f": 0, "dirs": {}}
+                    self.ext[ext] = g
+                g["s"] += sz
+                g["f"] += cnt
+                d = g["dirs"].setdefault(owner, [0, 0])
+                d[0] += sz
+                d[1] += cnt
 
     # ---- 增量 ----
     def note_reuse(self, path, size, files):
@@ -215,11 +250,12 @@ def _under_reused(k, reused):
             return True
 
 
-def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
+def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None, ext_owner=None):
     """递归统计，返回节点。kids 只保留到 max_depth 层，更深靠懒加载。
 
     mtime 由调用方从目录项自带的信息里取（scandir 已经缓存了 stat），
     不要再对每个目录多做一次 os.stat —— 8.6 万个目录实测要多花约 3 秒。
+    ext_owner 是 R4 扩展名统计归属的可见祖先目录，只在超出 max_depth 时沿用。
     """
     # Windows 的目录枚举缓存：文件刚新增/删除后，直接 os.stat(dir) 已是新 mtime，
     # 但父目录 scandir 拿到的 DirEntry.stat() 可能仍是旧值。增量复用只信 mtime，
@@ -237,6 +273,10 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
     node = _node(node_path, depth, ctx)
     node["m"] = mtime
 
+    # 1.4 R4：本层文件归属到「结果树最深层可见目录」，更深的目录并入同一归属，
+    # 目录分布的条目数因此与扫描树规模同阶，不会随递归深度失控。
+    owner = node_path if depth <= ctx.max_depth else (ext_owner or node_path)
+
     if _can_reuse(prev, mtime, depth, ctx.max_depth, ctx.prev_max, ctx.now):
         node["s"] = prev.get("s", 0)
         node["f"] = prev.get("f", 0)
@@ -250,6 +290,7 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
 
     local_files = 0
     local_bytes = 0
+    local_ext = {}
     prev_kids = _prev_kids(prev) if prev else {}
 
     # 1.4 R2：把 depth==1 的二级目录拆成独立任务。子任务一律 executor=None，
@@ -283,7 +324,7 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
                         if parallel:
                             pending.append((e.path, mt, pk))
                         else:
-                            absorb(walk(e.path, depth + 1, ctx, pk, mt), mt)
+                            absorb(walk(e.path, depth + 1, ctx, pk, mt, None, owner), mt)
                     elif e.is_file(follow_symlinks=False):
                         st = e.stat(follow_symlinks=False)
                         sz = st.st_size
@@ -291,6 +332,14 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
                         node["f"] += 1
                         local_files += 1
                         local_bytes += sz
+                        # 1.4 R4：本层归集，节点结束时批量提交，零额外 IO。
+                        # 用 rfind 而不是 os.path.splitext：55 万文件下少一次函数
+                        # 调用与元组分配；口径与前端 extOf() 一致（i > 0 才算后缀）。
+                        i = e.name.rfind(".")
+                        ext = e.name[i:].lower() if i > 0 else NO_EXT
+                        g = local_ext.setdefault(ext, [0, 0])
+                        g[0] += sz
+                        g[1] += 1
                         if sz >= BIG_FLOOR:
                             mt = int(st.st_mtime)
                             if mt > agg["max_hm"]:
@@ -321,7 +370,7 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
         node["err"] = "os"
 
     if pending:
-        futures = [executor.submit(walk, p, depth + 1, ctx, pk, mt, None)
+        futures = [executor.submit(walk, p, depth + 1, ctx, pk, mt, None, owner)
                    for p, mt, pk in pending]
         for (p, mt, _pk), f in zip(pending, futures):
             try:
@@ -335,6 +384,7 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
 
     if local_files:
         ctx.add_progress(local_files, local_bytes)
+    ctx.add_ext(local_ext, owner)
 
     node["hm"] = max_hm
 
@@ -360,6 +410,42 @@ def _prev_kids(prev_tree):
         except Exception:
             continue
     return out
+
+
+def ext_summary(ext_map, approx=False, partial=False):
+    """ScanCtx.ext → 前端视图数据（Top 类型 + 每类型的目录分布）。
+
+    聚合本身不限类型数，只在这里裁剪输出：类型按体积降序取前 EXT_SHOW 个，
+    每个类型只给目录分布前 EXT_DIR_SHOW 条，其余用 otherDirs 披露，绝不静默丢掉。
+    pct 以全树总量为分母（不是前 N 名的和），与界面上的「占比」语义一致。
+    """
+    items = []
+    for ext, g in (ext_map or {}).items():
+        dirs = sorted((g.get("dirs") or {}).items(), key=lambda kv: -kv[1][0])
+        items.append({
+            "ext": ext,
+            "s": int(g.get("s") or 0),
+            "f": int(g.get("f") or 0),
+            "dirs": [{"p": p, "s": int(v[0]), "f": int(v[1])}
+                     for p, v in dirs[:EXT_DIR_SHOW]],
+            "otherDirs": max(0, len(dirs) - EXT_DIR_SHOW),
+        })
+    items.sort(key=lambda x: (-x["s"], x["ext"]))
+    total = sum(x["s"] for x in items)
+    shown = items[:EXT_SHOW]
+    for x in shown:
+        x["pct"] = round(x["s"] * 100.0 / total, 2) if total else 0.0
+    return {
+        "approx": bool(approx),
+        # 旧快照还没有扩展名数据、本轮又是增量时统计只覆盖实扫文件，
+        # 会明显低估 —— 必须显式标记，让界面引导「强制全量重扫」。
+        "partial": bool(partial),
+        "totalBytes": total,
+        "totalFiles": sum(x["f"] for x in items),
+        "types": len(items),
+        "shown": len(shown),
+        "items": shown,
+    }
 
 
 def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
@@ -444,6 +530,16 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             except Exception:
                 diff_data = None
 
+        # R4：全树扩展名聚合。增量复用的子树本轮没进去读文件，沿用上次快照的
+        # 整份统计并标 approx（与 R3「复用即无变化」口径一致）；旧快照尚无 ext
+        # 字段时只能按本轮实扫结果统计，同样标 approx 让 UI 披露。
+        baseline_ext = (baseline or {}).get("ext")
+        if ctx.reused_keys and baseline_ext:
+            ext_data = dict(baseline_ext, approx=True, partial=False)
+        else:
+            ext_data = ext_summary(ctx.ext, approx=bool(ctx.reused_keys),
+                                   partial=bool(ctx.reused_keys))
+
         ctx.elapsed = round(time.time() - ctx.start, 1)
         ctx.phase = "完成"
         ctx.done = True
@@ -453,7 +549,7 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             # 强制全量时也要写快照：否则「全量一次」等于白白丢掉缓存
             saved, saved_bytes, degraded = snapshot.save(
                 cache_dir, root, root_node, list(ctx.hot), list(ctx.big),
-                max_depth, ctx.elapsed)
+                max_depth, ctx.elapsed, ext=ext_data)
 
         result = {
             "root": root,
@@ -469,6 +565,7 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             "scannedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
             "scannedAtEpoch": int(time.time()),
             "diff": diff_data,
+            "ext": ext_data,
             "incremental": {
                 "used": bool(ctx.reused_keys),
                 "reusedDirs": ctx.reused_dirs,

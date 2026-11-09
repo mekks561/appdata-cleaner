@@ -76,8 +76,12 @@ def _dump(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
 
-def save(cache_dir, root, tree, hot, big, max_depth, elapsed):
-    """写快照。返回 (是否写入, 字节数, 是否降级)。任何异常都静默放弃。"""
+def save(cache_dir, root, tree, hot, big, max_depth, elapsed, ext=None):
+    """写快照。返回 (是否写入, 字节数, 是否降级)。任何异常都静默放弃。
+
+    ext 是 1.4 R4 的全树扩展名聚合结果（可选）；放在快照顶层，
+    降级裁剪只作用于 tree，不会把它裁掉。旧调用点不传即与旧版逐字一致。
+    """
     try:
         os.makedirs(cache_dir, exist_ok=True)
     except OSError:
@@ -90,6 +94,8 @@ def save(cache_dir, root, tree, hot, big, max_depth, elapsed):
         "createdAt": time.strftime("%Y-%m-%d %H:%M:%S"),
         "elapsed": elapsed,
     }
+    if ext is not None:
+        base["ext"] = ext
 
     payload = dict(base, tree=tree, hot=hot, big=big)
     raw = _dump(payload)

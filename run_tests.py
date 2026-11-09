@@ -18,8 +18,8 @@ APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
 from tests import (test_api, test_auto, test_config, test_diff, test_dup,  # noqa: E402
-                   test_flow, test_increment, test_m1, test_m3, test_parallel,
-                   test_rules)
+                   test_ext, test_flow, test_increment, test_m1, test_m3,
+                   test_parallel, test_rules, test_warn)
 from tests.common import BASE  # noqa: E402
 
 
@@ -63,10 +63,12 @@ def main():
         results.append(test_m1.run())
         results.append(test_auto.run())
         results.append(test_dup.run())
-        # 这两组放在最后：test_parallel 用独立临时目录；test_diff 会 clear
-        # 掉 testdata 的快照并改动 testdata 内容，不应影响前面的组。
+        results.append(test_warn.run())       # 只读写配置校验，不碰 testdata
+        # 这三组放在最后：test_parallel 用独立临时目录；test_diff 与 test_ext
+        # 会清掉 testdata 的快照并改动 testdata 内容，不应影响前面的组。
         results.append(test_parallel.run())
         results.append(test_diff.run())
+        results.append(test_ext.run())
     finally:
         if proc:
             proc.terminate()

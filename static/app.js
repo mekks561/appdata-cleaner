@@ -19,7 +19,7 @@ const state = {
   version: "", build: "", about: null,
   root: "", diskFree: 0, diskTotal: 0,
   hot: [], big: [], errors: [], truncated: null,
-  incremental: null, snapshot: null, diff: null,
+  incremental: null, snapshot: null, diff: null, ext: null, extOpen: null,
   totalSize: 0, fileCount: 0, elapsed: 0, scannedAt: "",
   tab: "hot",
   sort: { key: "s", dir: -1 },
@@ -157,6 +157,8 @@ async function loadResult(silent){
   state.incremental = r.incremental || null;
   state.snapshot = r.snapshot || null;
   state.diff = r.diff || null;
+  state.ext = r.ext || null;
+  state.extOpen = null;
   state.totalSize = r.totalSize || 0;
   state.fileCount = r.fileCount || 0;
   state.elapsed = r.elapsed || 0;
@@ -187,6 +189,25 @@ function renderInc(){
   $("#btnFullScan").addEventListener("click", () => startScan(true));
 }
 
+/* ---------- 1.4 R5：空间预警横幅（只读提醒，不自动执行任何清理） ---------- */
+function renderWarn(){
+  const bar = $("#warnBar");
+  const gb = Number((state.about || {}).warnGB ?? (state.config || {}).warnGB ?? 10);
+  const limit = gb > 0 ? gb * 1024 ** 3 : 0;
+  if (!state.scanned || !limit || state.totalSize <= limit){
+    bar.classList.remove("on");
+    bar.innerHTML = "";
+    return;
+  }
+  bar.innerHTML = `<span>AppData 已占用 <b>${fmt(state.totalSize)}</b>，超过预警阈值 <b>${gb} GB</b>（超出 ${fmt(state.totalSize - limit)}）。
+    本提示只是提醒，不会自动删除任何东西；阈值可在设置页修改或填 0 关闭。</span>
+    <button class="btn" id="btnWarnOneClick">一键清理安全缓存</button>
+    <button class="btn" id="btnWarnDup">去查重复文件</button>`;
+  bar.classList.add("on");
+  $("#btnWarnOneClick").addEventListener("click", openOneClick);
+  $("#btnWarnDup").addEventListener("click", () => switchTab("dup"));
+}
+
 function renderStats(){
   $("#sTotal").textContent = fmt(state.totalSize);
   $("#sTotalSub").textContent = state.scanned
@@ -209,6 +230,8 @@ function renderStats(){
   $("#cDup").textContent = state.dup.groups.length;
   const dt = (state.diff || {}).totals;
   $("#cDiff").textContent = dt ? (dt.new + dt.removed + dt.grown + dt.shrunk) : 0;
+  $("#cExt").textContent = (state.ext || {}).types || 0;
+  renderWarn();
   const oc = $("#btnOneClick");
   if (oc){
     oc.disabled = !state.scanned;
@@ -384,9 +407,55 @@ function renderDiff(){
   }).join("");
 }
 
+/* ---------- 1.4 R4：全树扩展名聚合（只读分析，清理仍走大文件页签确认流） ---------- */
+function renderExtPage(){
+  const d = state.ext;
+  const sum = $("#extSum"), notice = $("#extNotice"), body = $("#extBody");
+  if (!d || !d.items || !d.items.length){
+    sum.textContent = "";
+    notice.textContent = "";
+    body.innerHTML = `<div class="empty-state"><div class="big">还没有扩展名统计</div>扫描后按全树文件类型聚合展示；点「强制全量重扫」可刷新</div>`;
+    return;
+  }
+  sum.textContent = `${d.types} 种类型 · ${fmt(d.totalBytes)} / ${(d.totalFiles || 0).toLocaleString()} 个文件` +
+    (d.shown < d.types ? ` · 显示体积最大的 ${d.shown} 种` : "");
+  notice.innerHTML = `统计覆盖本次扫描读到的全部文件（不只是大文件）；点任意一行展开，看该类型主要藏在哪些目录。` +
+    (d.partial
+      ? ` <span style="color:var(--warn)">本次统计只覆盖实际扫描到的文件（旧快照还没有扩展名数据），可能明显低估；请点右上「强制全量重扫」刷新。</span>`
+      : d.approx
+      ? ` <span style="color:var(--warn)">本次为增量扫描：复用的子树沿用上次统计，可能低估；点右上「强制全量重扫」取精确值。</span>`
+      : ` 本次为全量扫描。`) +
+    ` <b>本页只读</b>，不提供清理按钮 —— 要按类型清理请到「大文件 → 按扩展名聚合」，走同一套预览确认流程。`;
+  const rows = d.items.map(x => {
+    const open = state.extOpen === x.ext;
+    const dirs = (x.dirs || []).map(v => `<tr><td class="pth" title="${esc(v.p)}">${esc(v.p)}</td>` +
+      `<td class="num">${fmt(v.s)}</td><td class="num">${(v.f || 0).toLocaleString()}</td></tr>`).join("");
+    const more = x.otherDirs ? `<div class="ext-more">另有 ${x.otherDirs} 个目录未列出（合计已计入上方总量）</div>` : "";
+    return `<tr class="ext-row${open ? " open" : ""}" data-ext="${esc(x.ext)}">
+        <td class="nm">${open ? "▾" : "▸"} ${esc(x.ext)}</td>
+        <td class="num">${fmt(x.s)}</td>
+        <td><div class="bar"><i class="data" style="width:${Math.max(1, x.pct || 0)}%"></i></div></td>
+        <td class="num">${(x.pct || 0).toFixed(2)}%</td>
+        <td class="num">${(x.f || 0).toLocaleString()}</td>
+      </tr>` + (open ? `<tr class="ext-detail"><td colspan="5">
+        <table class="ext-dirs"><tbody>${dirs || `<tr><td colspan="3" class="ext-more">没有目录明细</td></tr>`}</tbody></table>
+        ${more}</td></tr>` : "");
+  }).join("");
+  body.innerHTML = `<table class="ext-table"><thead><tr>
+      <th style="width:24%">扩展名</th><th class="num" style="width:14%">占用</th>
+      <th style="width:34%">分布</th><th class="num" style="width:12%">占比</th>
+      <th class="num" style="width:16%">文件数</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  $$("#extBody .ext-row").forEach(tr => tr.addEventListener("click", () => {
+    state.extOpen = state.extOpen === tr.dataset.ext ? null : tr.dataset.ext;
+    renderExtPage();
+  }));
+}
+
 function renderTable(){
   const tb = $("#tbody");
   if (state.tab === "diff"){ renderDiff(); return; }
+  if (state.tab === "ext"){ renderExtPage(); return; }
   if (state.tab === "history"){ renderHistory(); return; }
   if (state.tab === "big" && state.bigView === "ext"){ renderExtTable(); return; }
   const rows = flatRows();
@@ -837,6 +906,7 @@ async function loadConfig(){
   $("#cfgPort").value = r.config.port || "";
   $("#cfgDupMin").value = (r.config.dup || {}).minSizeMB;
   $("#cfgDupBudget").value = (r.config.dup || {}).hashBudgetSec;
+  $("#cfgWarnGB").value = r.config.warnGB ?? 10;
   const ac = r.config.autoClean || {};
   $("#cfgAutoOn").checked = !!ac.enabled;
   $("#cfgAutoInterval").value = ac.interval || "daily";
@@ -917,6 +987,7 @@ async function saveConfig(){
   const port = parseInt($("#cfgPort").value, 10);
   const dupMin = parseInt($("#cfgDupMin").value, 10);
   const dupBudget = parseInt($("#cfgDupBudget").value, 10);
+  const warnGB = parseInt($("#cfgWarnGB").value, 10);
   const btn = $("#btnCfgSave");
   btn.disabled = true; btn.textContent = "保存中…";
   try {
@@ -932,9 +1003,12 @@ async function saveConfig(){
         interval: $("#cfgAutoInterval").value,
         hour: parseInt($("#cfgAutoHour").value, 10),
       },
+      warnGB: isNaN(warnGB) ? 10 : warnGB,
       rules,
     });
     state.config = r.config;
+    if (state.about) state.about.warnGB = r.config.warnGB;
+    renderWarn();
     msg.innerHTML = `<span style="color:var(--ok)">已保存 · ${r.customRules} 条自定义规则已生效</span>` +
       (r.warnings && r.warnings.length ? `<br><span style="color:var(--warn)">部分条目被丢弃：</span><br>` + r.warnings.map(esc).join("<br>") : "") +
       (r.restartHint ? `<br><span style="color:var(--warn)">${esc(r.restartHint)}</span>` : "");
@@ -1290,12 +1364,14 @@ function switchTab(name){
   const isSet = name === "settings";
   const isDup = name === "dup";
   const isDiff = name === "diff";
-  $("#listWrap").style.display = (isHist || isSet || isDup || isDiff) ? "none" : "block";
+  const isExt = name === "ext";
+  $("#listWrap").style.display = (isHist || isSet || isDup || isDiff || isExt) ? "none" : "block";
   $("#histWrap").style.display = isHist ? "block" : "none";
   $("#setWrap").style.display = isSet ? "block" : "none";
   $("#dupWrap").style.display = isDup ? "block" : "none";
   $("#diffWrap").style.display = isDiff ? "block" : "none";
-  $("#filterBar").style.display = (isHist || isSet || isDup || isDiff) ? "none" : "flex";
+  $("#extWrap").style.display = isExt ? "block" : "none";
+  $("#filterBar").style.display = (isHist || isSet || isDup || isDiff || isExt) ? "none" : "flex";
   $("#btnBigView").style.display = name === "big" ? "inline-block" : "none";
   state.expanded.clear();
   state.cursor = -1;
@@ -1317,6 +1393,10 @@ function switchTab(name){
     $("#truncBar").classList.remove("on");
     $("#truncBar").innerHTML = "";
     renderDiff();
+  } else if (isExt){
+    $("#truncBar").classList.remove("on");
+    $("#truncBar").innerHTML = "";
+    renderExtPage();
   } else {
     renderTable();
   }
@@ -1337,6 +1417,7 @@ $$("thead th.sortable").forEach(th => th.addEventListener("click", () => {
 $("#btnScan").addEventListener("click", () => startScan(false));
 $("#btnRescan").addEventListener("click", () => startScan(false));
 $("#btnDiffRescan").addEventListener("click", () => startScan(true));
+$("#btnExtRescan").addEventListener("click", () => startScan(true));
 $("#btnRescan2").addEventListener("click", () => { closeMask("maskResult"); startScan(false); });
 $("#btnRefresh").addEventListener("click", async () => {
   try {

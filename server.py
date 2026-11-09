@@ -345,6 +345,8 @@ class Handler(BaseHTTPRequestHandler):
                 "dataDir": DATA_DIR,
                 "levels": rules.LEVEL_TEXT,
                 "dest": CFG["dest"],
+                # V4-R5：空间预警阈值由配置单点下发，前端不另设默认值
+                "warnGB": CFG.get("warnGB", config.DEFAULTS["warnGB"]),
                 "configPath": CFG_PATH,
                 "customRules": rules.user_rule_count(),
                 "configWarnings": CFG_WARNINGS,
@@ -364,6 +366,12 @@ class Handler(BaseHTTPRequestHandler):
             if not res:
                 return self._json({"error": "还没有扫描结果"}, 404)
             return self._json(res.get("diff") or {"hasBaseline": False})
+        if u.path == "/api/ext":
+            res = STATE.result()
+            if not res:
+                return self._json({"error": "还没有扫描结果"}, 404)
+            return self._json(res.get("ext") or
+                              {"types": 0, "items": [], "approx": False, "partial": False})
         if u.path == "/api/history":
             q = parse_qs(u.query or "")
             try:

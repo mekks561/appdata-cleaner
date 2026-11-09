@@ -57,6 +57,8 @@
   </div>
 
   <div class="notebar" id="incBar"></div>
+  <!-- V4-R5：AppData 总量超阈值时的顶部预警（默认 10 GB，设置页可改/可关） -->
+  <div class="warnbar" id="warnBar"></div>
 
   <div class="panel progress" id="progress">
     <div class="line">
@@ -83,6 +85,7 @@
         <button class="tab" data-tab="big">大文件<span class="badge" id="cBig">0</span></button>
         <button class="tab" data-tab="dup">重复文件<span class="badge" id="cDup">0</span></button>
         <button class="tab" data-tab="diff">变化<span class="badge" id="cDiff">0</span></button>
+        <button class="tab" data-tab="ext">扩展名<span class="badge" id="cExt">0</span></button>
         <button class="tab" data-tab="err">访问异常<span class="badge" id="cErr">0</span></button>
         <button class="tab" data-tab="history">历史<span class="badge" id="cHist">0</span></button>
         <button class="tab" data-tab="settings">设置</button>
@@ -185,6 +188,20 @@
         <div id="diffBody" style="padding:10px 14px"></div>
       </div>
 
+      <!-- V4-R4：全树扩展名聚合，只读分析（清理入口仍走大文件页签的既有确认流） -->
+      <div class="tablewrap" id="extWrap" style="display:none">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+            <h3 style="margin:0;font-size:13px">全树扩展名分布</h3>
+            <span id="extSum" style="font-size:12px;color:var(--muted)"></span>
+            <div style="flex:1"></div>
+            <button class="btn ghost" id="btnExtRescan" title="强制全量重扫可消除增量带来的低估">强制全量重扫</button>
+          </div>
+          <div id="extNotice" style="margin-top:6px;font-size:12px;line-height:1.7;color:var(--muted)"></div>
+        </div>
+        <div id="extBody" style="padding:10px 14px"></div>
+      </div>
+
       <div class="tablewrap" id="setWrap" style="display:none">
         <div class="settings" style="padding:4px 6px">
           <h3>基础设置</h3>
@@ -196,6 +213,8 @@
             <input class="txt" id="cfgDupMin" spellcheck="false"></div>
           <div class="field" style="max-width:560px"><label>重复文件检测 · 内容哈希时间预算 秒（5-600，超时返回部分结果）</label>
             <input class="txt" id="cfgDupBudget" spellcheck="false"></div>
+          <div class="field" style="max-width:560px"><label>空间预警阈值 GB（0-10000，填 0 关闭预警；AppData 总量超过时在结果页顶部提示）</label>
+            <input class="txt" id="cfgWarnGB" spellcheck="false"></div>
 
           <h3 style="margin-top:24px">定时自动清理安全缓存</h3>
           <div class="hint" style="font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;max-width:720px">

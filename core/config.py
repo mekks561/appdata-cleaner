@@ -21,6 +21,8 @@ DEFAULTS = {
     # V4-R1 定时自动清理安全缓存：默认必须关闭（四条不变量之一），
     # 只支持 daily / weekly 两档，不做更细粒度（见 PLAN-1.4 风险 1）
     "autoClean": {"enabled": False, "interval": "daily", "hour": 12},
+    # V4-R5 空间预警：AppData 总量超过该阈值（GB）时在结果页顶部提示；0 = 关闭
+    "warnGB": 10,
     "rules": [],
 }
 
@@ -98,6 +100,15 @@ def _validate_auto_clean(v):
             return None, "autoClean.hour 必须是 0-23 的整数"
         out["hour"] = n
     return out, None
+
+
+def _validate_warn_gb(v):
+    """空间预警阈值（GB）。0 表示关闭；整数即可，避免配置里出现浮点歧义。"""
+    if not isinstance(v, int) or isinstance(v, bool):
+        return None, "必须是整数（GB）"
+    if not (0 <= v <= 10000):
+        return None, "必须是 0-10000 的整数（0 = 关闭预警）"
+    return v, None
 
 
 def _validate_rules(v):
@@ -193,6 +204,13 @@ def validate(raw):
         cfg["autoClean"] = dict(DEFAULTS["autoClean"])
     else:
         cfg["autoClean"] = auto
+
+    warn, err = _validate_warn_gb(raw.get("warnGB", DEFAULTS["warnGB"]))
+    if err:
+        errors.append("warnGB：%s" % err)
+        cfg["warnGB"] = DEFAULTS["warnGB"]
+    else:
+        cfg["warnGB"] = warn
 
     rules_out, rule_errors = _validate_rules(raw.get("rules") or [])
     # 规则错误按硬错误处理：保存接口必须 400 拒绝，不能静默丢掉用户
