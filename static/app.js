@@ -19,7 +19,7 @@ const state = {
   version: "", build: "", about: null,
   root: "", diskFree: 0, diskTotal: 0,
   hot: [], big: [], errors: [], truncated: null,
-  incremental: null, snapshot: null,
+  incremental: null, snapshot: null, diff: null,
   totalSize: 0, fileCount: 0, elapsed: 0, scannedAt: "",
   tab: "hot",
   sort: { key: "s", dir: -1 },
@@ -156,6 +156,7 @@ async function loadResult(silent){
   state.truncated = r.truncated || null;
   state.incremental = r.incremental || null;
   state.snapshot = r.snapshot || null;
+  state.diff = r.diff || null;
   state.totalSize = r.totalSize || 0;
   state.fileCount = r.fileCount || 0;
   state.elapsed = r.elapsed || 0;
@@ -206,6 +207,8 @@ function renderStats(){
   $("#cErr").textContent = state.errors.length;
   $("#cHist").textContent = state.history.length;
   $("#cDup").textContent = state.dup.groups.length;
+  const dt = (state.diff || {}).totals;
+  $("#cDiff").textContent = dt ? (dt.new + dt.removed + dt.grown + dt.shrunk) : 0;
   const oc = $("#btnOneClick");
   if (oc){
     oc.disabled = !state.scanned;
@@ -339,8 +342,51 @@ async function toggleBigView(){
   renderTable();
 }
 
+/* ---------- 1.4 R3：与上次扫描的变化对比 ---------- */
+function renderDiff(){
+  const d = state.diff;
+  const sum = $("#diffSum"), notice = $("#diffNotice"), body = $("#diffBody");
+  if (!d || !d.hasBaseline){
+    sum.textContent = "";
+    notice.textContent = "";
+    body.innerHTML = `<div class="empty-state"><div class="big">还没有对比基准</div>这是本次会话的第一次扫描；再扫一次，就能看到这段时间哪些目录在涨、哪些被清掉了</div>`;
+    return;
+  }
+  const t = d.totals || {};
+  sum.textContent = `基准：${d.baselineAt || "上次扫描"} · 净变化 ${fmt(t.deltaBytes || 0)} · 新增 ${t.new||0} / 移除 ${t.removed||0} / 增长 ${t.grown||0} / 缩小 ${t.shrunk||0}`;
+  notice.innerHTML = `对比范围是扫描树里可见的目录（层数由扫描设置决定），不额外读盘。` +
+    (d.approx
+      ? ` <span style="color:var(--warn)">本次为增量扫描：被复用的子树按「无变化」计，增长/缩小可能低估；点右上「强制全量重扫」取精确值。</span>`
+      : ` 本次为全量扫描。`);
+  const groups = [
+    ["新增目录", d.new, "new"],
+    ["已移除", d.removed, "removed"],
+    ["增长 Top", d.grown, "grown"],
+    ["缩小 Top", d.shrunk, "shrunk"],
+  ];
+  body.innerHTML = groups.map(([title, items, kind]) => {
+    const arr = items || [];
+    const total = t[kind] || 0;
+    if (!arr.length) return `<div class="diff-group"><h4>${title}<span>${total} 项</span></h4><div class="diff-empty">无</div></div>`;
+    const rows = arr.map(x => {
+      const delta = x.delta || 0;
+      const up = kind === "new" || kind === "grown";
+      const dtxt = kind === "new" ? `+${fmt(x.s)}`
+        : kind === "removed" ? `−${fmt(x.s)}`
+        : delta > 0 ? `+${fmt(delta)}` : `−${fmt(-delta)}`;
+      return `<tr><td class="nm" title="${esc(x.p)}">${esc(x.n)}</td>` +
+             `<td class="pth" title="${esc(x.p)}">${esc(x.p)}</td>` +
+             `<td class="num">${fmt(x.s)}</td>` +
+             `<td class="num diff-${up ? "up" : "down"}">${dtxt}</td></tr>`;
+    }).join("");
+    return `<div class="diff-group"><h4>${title}<span>${total} 项${arr.length < total ? `，显示前 ${arr.length}` : ""}</span></h4>` +
+           `<table class="diff-table"><tbody>${rows}</tbody></table></div>`;
+  }).join("");
+}
+
 function renderTable(){
   const tb = $("#tbody");
+  if (state.tab === "diff"){ renderDiff(); return; }
   if (state.tab === "history"){ renderHistory(); return; }
   if (state.tab === "big" && state.bigView === "ext"){ renderExtTable(); return; }
   const rows = flatRows();
@@ -1243,11 +1289,13 @@ function switchTab(name){
   const isHist = name === "history";
   const isSet = name === "settings";
   const isDup = name === "dup";
-  $("#listWrap").style.display = (isHist || isSet || isDup) ? "none" : "block";
+  const isDiff = name === "diff";
+  $("#listWrap").style.display = (isHist || isSet || isDup || isDiff) ? "none" : "block";
   $("#histWrap").style.display = isHist ? "block" : "none";
   $("#setWrap").style.display = isSet ? "block" : "none";
   $("#dupWrap").style.display = isDup ? "block" : "none";
-  $("#filterBar").style.display = (isHist || isSet || isDup) ? "none" : "flex";
+  $("#diffWrap").style.display = isDiff ? "block" : "none";
+  $("#filterBar").style.display = (isHist || isSet || isDup || isDiff) ? "none" : "flex";
   $("#btnBigView").style.display = name === "big" ? "inline-block" : "none";
   state.expanded.clear();
   state.cursor = -1;
@@ -1265,6 +1313,10 @@ function switchTab(name){
     $("#truncBar").innerHTML = "";
     if (!state.dup.loaded) loadDup().catch(() => renderDup());
     else renderDup();
+  } else if (isDiff){
+    $("#truncBar").classList.remove("on");
+    $("#truncBar").innerHTML = "";
+    renderDiff();
   } else {
     renderTable();
   }
@@ -1284,6 +1336,7 @@ $$("thead th.sortable").forEach(th => th.addEventListener("click", () => {
 
 $("#btnScan").addEventListener("click", () => startScan(false));
 $("#btnRescan").addEventListener("click", () => startScan(false));
+$("#btnDiffRescan").addEventListener("click", () => startScan(true));
 $("#btnRescan2").addEventListener("click", () => { closeMask("maskResult"); startScan(false); });
 $("#btnRefresh").addEventListener("click", async () => {
   try {

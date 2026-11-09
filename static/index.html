@@ -82,6 +82,7 @@
         <button class="tab active" data-tab="hot">目录排行<span class="badge" id="cHot">0</span></button>
         <button class="tab" data-tab="big">大文件<span class="badge" id="cBig">0</span></button>
         <button class="tab" data-tab="dup">重复文件<span class="badge" id="cDup">0</span></button>
+        <button class="tab" data-tab="diff">变化<span class="badge" id="cDiff">0</span></button>
         <button class="tab" data-tab="err">访问异常<span class="badge" id="cErr">0</span></button>
         <button class="tab" data-tab="history">历史<span class="badge" id="cHist">0</span></button>
         <button class="tab" data-tab="settings">设置</button>
@@ -169,6 +170,19 @@
           <div style="flex:1"></div>
           <button class="btn danger" id="btnDupClean" disabled>清理选中重复项</button>
         </div>
+      </div>
+
+      <div class="tablewrap" id="diffWrap" style="display:none">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+            <h3 style="margin:0;font-size:13px">与上次扫描相比</h3>
+            <span id="diffSum" style="font-size:12px;color:var(--muted)"></span>
+            <div style="flex:1"></div>
+            <button class="btn ghost" id="btnDiffRescan" title="强制全量重扫可消除增量带来的低估">强制全量重扫</button>
+          </div>
+          <div id="diffNotice" style="margin-top:6px;font-size:12px;line-height:1.7;color:var(--muted)"></div>
+        </div>
+        <div id="diffBody" style="padding:10px 14px"></div>
       </div>
 
       <div class="tablewrap" id="setWrap" style="display:none">

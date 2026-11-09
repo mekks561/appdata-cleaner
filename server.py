@@ -359,6 +359,11 @@ class Handler(BaseHTTPRequestHandler):
             out = dict(res)
             out["seq"] = STATE.seq()
             return self._json(out)
+        if u.path == "/api/diff":
+            res = STATE.result()
+            if not res:
+                return self._json({"error": "还没有扫描结果"}, 404)
+            return self._json(res.get("diff") or {"hasBaseline": False})
         if u.path == "/api/history":
             q = parse_qs(u.query or "")
             try:

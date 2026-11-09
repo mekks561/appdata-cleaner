@@ -220,6 +220,18 @@ tbody tr.cur{box-shadow:inset 2px 0 0 var(--accent);background:#f5f8ff;}
 .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:#111827;color:#fff;
        padding:9px 16px;border-radius:8px;font-size:13px;z-index:99;opacity:0;transition:.25s;pointer-events:none;}
 .toast.on{opacity:1;}
+/* 1.4 R3：变化对比 */
+.diff-group{margin-bottom:16px;}
+.diff-group h4{margin:0 0 6px;font-size:12.5px;font-weight:600;}
+.diff-group h4 span{font-weight:400;color:var(--muted);font-size:11.5px;margin-left:8px;}
+.diff-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.diff-table td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.diff-table td.nm{width:22%;}
+.diff-table td.pth{width:56%;color:var(--muted);}
+.diff-table td.num{width:11%;text-align:right;}
+.diff-up{color:var(--danger);font-weight:600;}
+.diff-down{color:var(--ok);font-weight:600;}
+.diff-empty{color:var(--muted);font-size:12px;padding:4px 0 8px;}
 @media (max-width:1080px){
   .main{grid-template-columns:1fr;}
   .stats{grid-template-columns:repeat(2,1fr);}

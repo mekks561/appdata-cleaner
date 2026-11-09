@@ -9,6 +9,7 @@ import json
 import os
 import time
 
+from core import snapshot
 from tests.common import (APP, MB, ROOT, Checker, fresh_testdata, get, post,
                           scan)
 
@@ -38,6 +39,9 @@ def _mkfile(path, mb):
 
 
 def run():
+    # 本组是唯一依赖「快照基线内容」的组：前序组或上一轮运行留下的旧快照
+    # 会让「冷子树新增文件」误判为可复用。显式清基线，保证从零开始。
+    snapshot.drop(CACHE_DIR, ROOT)
     fresh_testdata()
     c = Checker("增量扫描 (R6)")
 

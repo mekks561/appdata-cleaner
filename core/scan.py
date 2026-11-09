@@ -11,6 +11,14 @@
   · 目录 mtime 未变 → 直接复用上次快照的整棵子树，不再进目录；
   · hot / big 候选同样从快照回放，否则复用会把大目录从排行里弄丢；
   · 结果必须带 `incremental` 元信息，让界面能明示「这是近似值」。
+
+1.4.0 M2 增加并行分片提速（R2）与变化对比（R3）：
+  · 1.2 起就已有 4-worker 并行，但只按 AppData 的 3 个顶层目录分片，
+    Local 一家独大导致负载严重不均。R2 把分片下沉到 depth==1 的二级目录，
+    子任务纯递归、不再向线程池提交（避免嵌套等待）。
+  · worker 数由 APP_SCAN_WORKERS 控制，=1 时完全退回串行路径，
+    输出结构与字段与旧版逐字一致（增量复用 / 快照 / 排行 / 截断统计不变）。
+  · 扫描开始时把旧快照留作 diff 基准，扫描结束前与新树按 key 对齐算出变化。
 """
 
 import heapq
@@ -36,6 +44,21 @@ BIG_FLOOR = 50 * 1024 * 1024
 
 # 子树「冷却时间」：上一轮记录的最新修改时间距今不足这么多秒，就不复用它的旧统计
 COLD_SECONDS = 600
+
+# 1.4 R2：只在 depth==1 把二级目录拆成独立任务，让并行度不再受限于 3 个顶层目录。
+PARALLEL_DEPTH = 1
+# 真实 AppData（70.1GB / 55.9 万文件）带预热实测：1w 9.57s、4w 5.57s、
+# 8w 6.19s、12w 6.79s、16w 6.80s —— 4 档最快且线程争用最小。
+DEFAULT_WORKERS = 4
+
+
+def scan_workers():
+    """并行 worker 数。APP_SCAN_WORKERS=1 是官方单线程回退开关（PLAN-1.4 风险 2）。"""
+    try:
+        n = int(os.environ.get("APP_SCAN_WORKERS") or DEFAULT_WORKERS)
+    except (TypeError, ValueError):
+        n = DEFAULT_WORKERS
+    return max(1, min(16, n))
 
 
 class ScanCtx(object):
@@ -192,12 +215,25 @@ def _under_reused(k, reused):
             return True
 
 
-def walk(node_path, depth, ctx, prev=None, mtime=0):
+def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None):
     """递归统计，返回节点。kids 只保留到 max_depth 层，更深靠懒加载。
 
     mtime 由调用方从目录项自带的信息里取（scandir 已经缓存了 stat），
     不要再对每个目录多做一次 os.stat —— 8.6 万个目录实测要多花约 3 秒。
     """
+    # Windows 的目录枚举缓存：文件刚新增/删除后，直接 os.stat(dir) 已是新 mtime，
+    # 但父目录 scandir 拿到的 DirEntry.stat() 可能仍是旧值。增量复用只信 mtime，
+    # 于是会「新增了文件却判定可复用」而漏检（本次并行改造改变时序后稳定复现）。
+    # 只对「最深一层 + 旧树里有对应节点」的候选用直接路径复核一次：
+    # 复用判定只可能发生在这一层，全量扫描 prev=None 时零额外 IO。
+    if depth == ctx.max_depth and prev is not None:
+        try:
+            real_mt = int(os.stat(safe_path(node_path)).st_mtime)
+            if real_mt != mtime:
+                mtime = real_mt
+        except OSError:
+            pass
+
     node = _node(node_path, depth, ctx)
     node["m"] = mtime
 
@@ -212,11 +248,25 @@ def walk(node_path, depth, ctx, prev=None, mtime=0):
         ctx.add_progress(node["f"], node["s"])
         return node
 
-    max_child = 0
-    max_hm = mtime
     local_files = 0
     local_bytes = 0
     prev_kids = _prev_kids(prev) if prev else {}
+
+    # 1.4 R2：把 depth==1 的二级目录拆成独立任务。子任务一律 executor=None，
+    # 纯递归不再提交任务 —— 否则线程池里的任务等待线程池任务会互相占满。
+    parallel = executor is not None and depth == PARALLEL_DEPTH
+    pending = []
+    agg = {"max_child": 0, "max_hm": mtime}
+
+    def absorb(child, mt):
+        # 只在主线程聚合，无需加锁；按 pending 顺序 append，顺序与串行一致。
+        node["s"] += child["s"]
+        node["f"] += child["f"]
+        node["d"] += 1 + child["d"]
+        agg["max_child"] = max(agg["max_child"], child["s"])
+        agg["max_hm"] = max(agg["max_hm"], child.get("hm") or mt)
+        if node["kids"] is not None:
+            node["kids"].append(child)
 
     try:
         with os.scandir(safe_path(node_path)) as it:
@@ -229,14 +279,11 @@ def walk(node_path, depth, ctx, prev=None, mtime=0):
                             mt = int(e.stat(follow_symlinks=False).st_mtime)
                         except OSError:
                             mt = 0
-                        child = walk(e.path, depth + 1, ctx, prev_kids.get(key(e.path)), mt)
-                        node["s"] += child["s"]
-                        node["f"] += child["f"]
-                        node["d"] += 1 + child["d"]
-                        max_child = max(max_child, child["s"])
-                        max_hm = max(max_hm, child.get("hm") or mt)
-                        if node["kids"] is not None:
-                            node["kids"].append(child)
+                        pk = prev_kids.get(key(e.path))
+                        if parallel:
+                            pending.append((e.path, mt, pk))
+                        else:
+                            absorb(walk(e.path, depth + 1, ctx, pk, mt), mt)
                     elif e.is_file(follow_symlinks=False):
                         st = e.stat(follow_symlinks=False)
                         sz = st.st_size
@@ -246,8 +293,8 @@ def walk(node_path, depth, ctx, prev=None, mtime=0):
                         local_bytes += sz
                         if sz >= BIG_FLOOR:
                             mt = int(st.st_mtime)
-                            if mt > max_hm:
-                                max_hm = mt
+                            if mt > agg["max_hm"]:
+                                agg["max_hm"] = mt
                             info = rules.classify(e.path)
                             ctx.add_big({
                                 "p": e.path, "n": e.name, "s": sz,
@@ -272,6 +319,19 @@ def walk(node_path, depth, ctx, prev=None, mtime=0):
     except OSError as ex:
         ctx.note_error(node_path, "os", str(ex))
         node["err"] = "os"
+
+    if pending:
+        futures = [executor.submit(walk, p, depth + 1, ctx, pk, mt, None)
+                   for p, mt, pk in pending]
+        for (p, mt, _pk), f in zip(pending, futures):
+            try:
+                absorb(f.result(), mt)
+            except Exception as ex:
+                # 单个子树失败不能拖垮整次扫描，与串行路径的错误处理保持一致
+                ctx.note_error(p, "os", str(ex))
+                node["err"] = node["err"] or "os"
+
+    max_child, max_hm = agg["max_child"], agg["max_hm"]
 
     if local_files:
         ctx.add_progress(local_files, local_bytes)
@@ -310,11 +370,12 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
     """
     ctx = ScanCtx(root, max_depth, int(hot_mb * 1024 * 1024), int(big_mb * 1024 * 1024))
 
-    if not fresh and cache_dir:
-        prev = snapshot.load(cache_dir, root)
-        if prev:
-            ctx.prev = prev
-            ctx.prev_max = int(prev.get("maxDepth") or 0)
+    # 旧快照既是增量复用的来源，也是 R3 变化对比的基准。
+    # fresh 时仍读它做对比，但不拿它做复用（强制全量）。
+    baseline = snapshot.load(cache_dir, root) if cache_dir else None
+    if not fresh and baseline:
+        ctx.prev = baseline
+        ctx.prev_max = int(baseline.get("maxDepth") or 0)
 
     if on_begin:
         on_begin(ctx, root)
@@ -337,9 +398,9 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
         lock = threading.Lock()
         prev_kids = _prev_kids((ctx.prev or {}).get("tree"))
 
-        def one(item):
+        def one(item, executor):
             p, mt = item
-            n = walk(p, 1, ctx, prev_kids.get(key(p)), mt)
+            n = walk(p, 1, ctx, prev_kids.get(key(p)), mt, executor)
             with lock:
                 root_node["s"] += n["s"]
                 root_node["f"] += n["f"]
@@ -349,8 +410,16 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             return n
 
         ctx.phase = "统计各子目录体积"
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(one, tops))
+        nw = scan_workers()
+        if nw > 1:
+            # 顶层目录串行进入，真正的并行发生在 walk(depth=1) 的二级分片里，
+            # 全进程只有一个线程池，不会出现嵌套提交。
+            with ThreadPoolExecutor(max_workers=nw) as pool:
+                for item in tops:
+                    one(item, pool)
+        else:
+            for item in tops:
+                one(item, None)
 
         # 复用子树时 hot/big 不会自己被记账，从快照回放补上
         seen_hot = set(key(h["p"]) for h in ctx.hot)
@@ -363,6 +432,17 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
                              key=lambda x: x["s"])
         big = heapq.nlargest(BIG_SHOW, [b for b in ctx.big if b["s"] >= ctx.big_threshold],
                              key=lambda x: x["s"])
+
+        # R3：旧树与新树按规范化路径对齐，不新增任何磁盘 IO。
+        diff_data = None
+        if baseline and baseline.get("tree"):
+            try:
+                diff_data = snapshot.compare(
+                    baseline["tree"], root_node,
+                    approx=bool(ctx.reused_keys),
+                    baseline_at=baseline.get("createdAt"))
+            except Exception:
+                diff_data = None
 
         ctx.elapsed = round(time.time() - ctx.start, 1)
         ctx.phase = "完成"
@@ -388,6 +468,7 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             "disk": dir_usage(root),
             "scannedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
             "scannedAtEpoch": int(time.time()),
+            "diff": diff_data,
             "incremental": {
                 "used": bool(ctx.reused_keys),
                 "reusedDirs": ctx.reused_dirs,
