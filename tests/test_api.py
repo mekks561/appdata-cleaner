@@ -2,6 +2,7 @@
 """接口与安全测试（R3 安全加固 / R4 版本 / R5 截断）。需要服务已启动。"""
 
 import os
+import re
 
 from tests.common import (APP, ROOT, Checker, exec_, fresh_testdata, get, post,
                           preview, scan)
@@ -14,7 +15,13 @@ def run():
     # —— R4 版本贯通 ——
     st, info = get("/api/info")
     c.eq("GET /api/info 200", st, 200)
-    c.eq("version", info.get("version"), "1.3.0")
+    # 版本断言不再硬编码字面量：每次 bump 版本号都要改测试本身就是缺陷。
+    # 改为与 server.py 的 APP_VERSION 常量比对，同时校验 x.y.z 格式。
+    with open(os.path.join(APP, "server.py"), encoding="utf-8") as f:
+        declared = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', f.read()).group(1)
+    c.eq("version 与服务端常量一致", info.get("version"), declared)
+    c.ok("version 格式为 x.y.z", bool(re.fullmatch(r"\d+\.\d+\.\d+", declared)),
+         declared)
     c.ok("build 非空", bool(info.get("build")), info.get("build"))
     c.ok("python 字段存在", bool(info.get("python")), info.get("python"))
     c.ok("logDir 字段存在", bool(info.get("logDir")), info.get("logDir"))

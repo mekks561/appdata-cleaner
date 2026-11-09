@@ -22,7 +22,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 BUILD = "2026-11-09"
 
 from core import actions, config, dupfind, history, rules, scan  # noqa: E402
@@ -30,6 +30,7 @@ from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
+from core import autoclean  # noqa: E402
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # PyInstaller onefile：静态资源在解压目录（只读），config/logs/cache 必须放 exe 旁边（可写）
@@ -131,6 +132,130 @@ def write_log(mode, dest, results, freed, before, after, manifest_id=""):
         "version": APP_VERSION,
         "items": [{"p": r["p"], "ok": r["ok"], "msg": r["msg"]} for r in results],
     })
+
+
+# ---- 一键清理 / 自动清理 共用服务端单点（V4-R1 不变量 1：仅 safe） ----
+
+def collect_safe_items():
+    """从扫描树枚举所有「安全缓存且可删」的目录。
+
+    · 只认扫描树节点自带的 level/deletable（判定单点在 rules.py）；
+    · 命中即停：父目录将整体清理，不再枚举其子目录（避免重复计入）；
+    · s<=0 的空目录无清理价值，跳过；
+    · 扫描树是上次扫描的快照，已不存在的路径直接跳过 ——
+      否则「清理 → 再预览」还会把刚删完的目录又列出来。
+    无扫描结果返回 None。
+    """
+    res = STATE.result()
+    if not res:
+        return None
+    items = []
+
+    def rec(node):
+        if len(items) >= ONECLICK_MAX:
+            return
+        if not node or node.get("s", 0) <= 0:
+            return
+        p = node.get("p") or ""
+        if not os.path.exists(safe_path(p)):
+            return
+        if node.get("level") == "safe" and node.get("deletable") is not False:
+            items.append(node)
+            return                      # 整目录清掉，子项不再重复列出
+        for k in node.get("kids") or ():
+            rec(k)
+
+    rec(res.get("tree"))
+    items.sort(key=lambda x: -x["s"])
+    return items
+
+
+def run_oneclick(mode):
+    """枚举 + 二次复核 level + 回收站执行 + 写历史。
+
+    手动（oneclick，需确认词）与自动（auto-oneclick，守门见 autoclean.py）
+    走同一份枚举与复核代码 —— 自动清理永远不可能比手动清理清得更多。
+    返回 (result dict, error str)，二者互斥。
+    """
+    items = collect_safe_items()
+    if items is None:
+        return None, "还没有扫描结果"
+    paths = [it["p"] for it in items]
+    # 再核一遍 level：扫描树是旧的而规则可能已更新（比如刚删掉一条 safe 自定义规则）
+    paths = [p for p in paths if rules.classify(p)["level"] == "safe"]
+    if not paths:
+        return None, "没有可清理的安全缓存项"
+
+    root = STATE.root(DEFAULT_ROOT)
+    result = actions.exec_action(paths, "recycle", None, root)
+    result["mode"] = mode
+    result["manifestId"] = ""
+    result["undoable"] = False
+
+    write_log(mode, None, result["results"],
+              result["freed"], result["freeBefore"], result["freeAfter"])
+    return result, None
+
+
+def _auto_run_fn():
+    """调度线程注入的执行动作：跑一次自动清理，返回 (freed, okCount)。"""
+    result, err = run_oneclick(autoclean.RUN_MODE)
+    if err:
+        return 0, 0
+    freed = result.get("freedBySize") or result.get("freed") or 0
+    return freed, sum(1 for r in result["results"] if r["ok"])
+
+
+def last_auto_run():
+    """读历史，返回最近一次自动清理 {at, freed, count} 或 None。"""
+    for rec in history.read(LOG_DIR, 300):
+        if rec.get("mode") == autoclean.RUN_MODE:
+            return {
+                "at": rec.get("epoch") or 0,
+                "freed": rec.get("freedBySize") or rec.get("freed") or 0,
+                "count": rec.get("ok") or 0,
+            }
+    return None
+
+
+def _scan_epoch():
+    """当前扫描结果的 epoch（新鲜度守门用）。"""
+    res = STATE.result()
+    if not res:
+        return None
+    ep = res.get("scannedAtEpoch")
+    if ep:
+        return ep
+    # 兼容旧快照：从字符串解析
+    try:
+        return time.mktime(time.strptime(res.get("scannedAt", ""), "%Y-%m-%d %H:%M:%S"))
+    except (ValueError, TypeError):
+        return None
+
+
+def auto_status():
+    """汇总自动清理状态（UI 披露 + 测试断言用）。"""
+    ac = dict(CFG.get("autoClean") or config.DEFAULTS["autoClean"])
+    last = last_auto_run()
+    scan_epoch = _scan_epoch()
+    due, reason = autoclean.is_due(CFG, last["at"] if last else None,
+                                   scan_epoch)
+    # 下次计划时刻：今日/本周计划时刻（已过则明天同时刻，粗略披露即可）
+    lt = time.localtime()
+    target = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, ac["hour"], 0, 0, 0, 0, -1))
+    if lt.tm_hour >= ac["hour"]:
+        target += 86400
+    return {
+        "enabled": ac.get("enabled", False),
+        "interval": ac.get("interval"),
+        "hour": ac.get("hour"),
+        "lastRun": last,
+        "nextRun": int(target) if ac.get("enabled") else None,
+        "due": due, "reason": reason,
+        "scanAge": (int(time.time() - scan_epoch) if scan_epoch else None),
+        "fresh": scan_epoch is not None and
+                 time.time() - scan_epoch <= autoclean.FRESH_SECONDS,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -241,6 +366,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 50
             return self._json({"items": history.read(LOG_DIR, limit), "logDir": LOG_DIR})
+        if u.path == "/api/auto/status":
+            return self._json(auto_status())
         if u.path == "/api/trend":
             q = parse_qs(u.query or "")
             try:
@@ -313,6 +440,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_oneclick_preview()
         if u.path == "/api/oneclick":
             return self._post_oneclick(body)
+        if u.path == "/api/auto/check":
+            return self._post_auto_check()
         if u.path == "/api/restart-admin":
             return self._post_restart_admin()
         if u.path == "/api/dup/scan":
@@ -457,41 +586,12 @@ class Handler(BaseHTTPRequestHandler):
                            "customRules": n, "warnings": warnings,
                            "restartHint": restart_hint})
 
-    # ---- 一键清理（R2） ----
+    # ---- 一键清理（R2）+ 自动清理（V4-R1）共用单点 ----
     def _collect_safe_items(self):
-        """从扫描树枚举所有「安全缓存且可删」的目录。
-
-        · 只认扫描树节点自带的 level/deletable（判定单点在 rules.py）；
-        · 命中即停：父目录将整体清理，不再枚举其子目录（避免重复计入）；
-        · s<=0 的空目录无清理价值，跳过；
-        · 扫描树是上次扫描的快照，已不存在的路径直接跳过 ——
-          否则「清理 → 再预览」还会把刚删完的目录又列出来。
-        """
-        res = STATE.result()
-        if not res:
-            return None
-        items = []
-
-        def rec(node):
-            if len(items) >= ONECLICK_MAX:
-                return
-            if not node or node.get("s", 0) <= 0:
-                return
-            p = node.get("p") or ""
-            if not os.path.exists(safe_path(p)):
-                return
-            if node.get("level") == "safe" and node.get("deletable") is not False:
-                items.append(node)
-                return                      # 整目录清掉，子项不再重复列出
-            for k in node.get("kids") or ():
-                rec(k)
-
-        rec(res.get("tree"))
-        items.sort(key=lambda x: -x["s"])
-        return items
+        return collect_safe_items()
 
     def _post_oneclick_preview(self):
-        items = self._collect_safe_items()
+        items = collect_safe_items()
         if items is None:
             return self._json({"error": "还没有扫描结果"}, 404)
         if not items:
@@ -511,26 +611,36 @@ class Handler(BaseHTTPRequestHandler):
         # 双保险：确认词 + 服务端重新枚举（忽略客户端可能传来的任何清单）
         if (body.get("confirmText") or "").strip() != ONECLICK_CONFIRM:
             return self._json({"error": "请输入确认词「%s」" % ONECLICK_CONFIRM}, 400)
-        items = self._collect_safe_items()
-        if items is None:
-            return self._json({"error": "还没有扫描结果"}, 404)
-        if not items:
-            return self._json({"error": "没有可清理的安全缓存项"}, 400)
-        paths = [it["p"] for it in items]
-        # 再核一遍 level：扫描树是旧的而规则可能已更新（比如刚删掉一条 safe 自定义规则）
-        paths = [p for p in paths if rules.classify(p)["level"] == "safe"]
-        if not paths:
-            return self._json({"error": "没有可清理的安全缓存项"}, 400)
-
-        root = STATE.root(DEFAULT_ROOT)
-        result = actions.exec_action(paths, "recycle", None, root)
-        result["mode"] = "oneclick"
-        result["manifestId"] = ""
-        result["undoable"] = False
-
-        write_log("oneclick", None, result["results"],
-                  result["freed"], result["freeBefore"], result["freeAfter"])
+        result, err = run_oneclick("oneclick")
+        if err:
+            return self._json({"error": err}, 400 if "没有" in err else 404)
         return self._json(result)
+
+    def _post_auto_check(self):
+        """手动触发一次自动清理守门检查（调度线程每 5 分钟也走同一入口）。
+
+        守门不通过时返回 {"ran": false, "reason": ...}；通过则执行并返回
+        释放量与项数。与后台调度共用 maybe_run —— 测试无需等 5 分钟。
+        """
+        holder = {"err": None}
+
+        def run():
+            result, err = run_oneclick(autoclean.RUN_MODE)
+            if err:
+                holder["err"] = err
+                return 0, 0
+            # freedBySize 是逐项实算，比磁盘 free 差值稳定（小清理可能差值为 0）
+            freed = result.get("freedBySize") or result.get("freed") or 0
+            return freed, sum(1 for r in result["results"] if r["ok"])
+
+        r = autoclean.maybe_run(
+            CFG,
+            lambda: (last_auto_run() or {}).get("at"),
+            _scan_epoch,
+            run)
+        if holder["err"]:
+            r["error"] = holder["err"]
+        return self._json(r)
 
     def _post_open(self, body):
         p = body.get("path") or ""
@@ -783,6 +893,24 @@ def main():
             _launch_scan(DEFAULT_ROOT, 3, 50, 100, False)
             print(" 已在后台预热扫描（增量），完成后打开页面即有数据")
         threading.Thread(target=_warmup, daemon=True).start()
+
+    # V4-R1 定时自动清理：线程常驻、实时读 CFG —— 设置页开关立即生效，
+    # 未开启时 is_due 返回 disabled 不会执行任何删除。
+    # 测试环境 APP_NO_AUTOCLEAN=1 关掉（测试用 /api/auto/check 手动触发）。
+    if not os.environ.get("APP_NO_AUTOCLEAN"):
+        sched = autoclean.Scheduler(
+            lambda: CFG,
+            lambda: (last_auto_run() or {}).get("at"),
+            _scan_epoch,
+            _auto_run_fn,
+            on_done=lambda r: print(
+                " 自动清理完成：释放 %.1f MB（%d 项）"
+                % (r.get("freed", 0) / 1048576.0, r.get("count", 0))))
+        sched.start()
+        if CFG["autoClean"]["enabled"]:
+            print(" 定时自动清理已启用（%s，每天 %02d 点）：每 %d 分钟检查一次"
+                  % (CFG["autoClean"]["interval"], CFG["autoClean"]["hour"],
+                     autoclean.CHECK_INTERVAL // 60))
 
     try:
         srv.serve_forever()

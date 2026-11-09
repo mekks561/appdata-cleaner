@@ -11,7 +11,7 @@
 
   <header>
     <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
-      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.3.0</button>
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.4.0</button>
     </div>
     <div class="spacer"></div>
     <div class="netinfo" id="netinfo"></div>
@@ -182,6 +182,28 @@
             <input class="txt" id="cfgDupMin" spellcheck="false"></div>
           <div class="field" style="max-width:560px"><label>重复文件检测 · 内容哈希时间预算 秒（5-600，超时返回部分结果）</label>
             <input class="txt" id="cfgDupBudget" spellcheck="false"></div>
+
+          <h3 style="margin-top:24px">定时自动清理安全缓存</h3>
+          <div class="hint" style="font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;max-width:720px">
+            到点自动把所有绿色「安全缓存」目录移入<b>回收站</b>（可还原、记入历史）。
+            四条红线：默认关闭 · 只清 safe 级 · 扫描结果超 7 天跳过本轮 · 每次都可在历史页追溯。
+            与「一键清理」是同一份服务端清单，自动清理不可能清得更多。
+          </div>
+          <div class="field" style="max-width:560px;display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+            <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="cfgAutoOn"> 启用定时自动清理</label>
+            <label style="display:flex;gap:6px;align-items:center;margin:0">频率
+              <select id="cfgAutoInterval" class="txt" style="width:auto">
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+              </select></label>
+            <label style="display:flex;gap:6px;align-items:center;margin:0">时刻
+              <select id="cfgAutoHour" class="txt" style="width:auto"></select></label>
+          </div>
+          <div class="field" style="max-width:560px">
+            <button class="btn ghost" id="btnAutoPreview" type="button">预览将清理的内容</button>
+            <span id="autoPreviewOut" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+          </div>
+          <div class="field" id="autoStatus" style="max-width:640px;font-size:12px;color:var(--muted);line-height:1.7"></div>
 
           <h3 style="margin-top:24px">自定义规则</h3>
           <div class="hint" style="font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;max-width:720px">

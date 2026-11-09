@@ -1,4 +1,4 @@
-# AppData 磁盘清理助手 v1.3.0
+# AppData 磁盘清理助手 v1.4.0
 
 查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 标准库实现，**无需安装任何依赖**，不需要 Node、不需要联网。
 
@@ -39,6 +39,7 @@ build_exe.bat        （或命令行：python -m PyInstaller --onefile --name Ap
 8. 「设置」页签可改默认移动目标、端口、重复检测参数，并添加**自定义规则**（格式 `路径段/段 | 级别 | 说明`）——用户 protected 优先级最高，但 safe 永远改不动系统保护目录
 9. 普通权限遇到「拒绝访问」不用重启：顶部横幅点**「以管理员身份重启」**，UAC 点「是」后服务自动以管理员重启、页面自动恢复
 10. 「历史」页签顶部有**近 30 天清理趋势图**（每天释放空间折线，峰值自动标注）；「大文件」页签可切**「按扩展名聚合」**视图，勾一个类型即选中该类型下全部可清理文件，走同一确认流执行
+11. 想彻底不管就用设置页的**定时自动清理**（v1.4 新增）：默认关闭，可选每天/每周与执行时刻；开启前先点「预览将清理的内容」，状态行会披露下次计划、上次执行与释放量、跳过原因。只清绿色「安全缓存」，与一键清理是同一份服务端清单
 
 ## 四级分类
 
@@ -64,6 +65,7 @@ build_exe.bat        （或命令行：python -m PyInstaller --onefile --name Ap
 | 请求来源校验 | 校验 `Origin`/`Referer` 与 `Host`，挡住跨站请求 |
 | 撤销清单校验 | manifestId 只接受严格格式，杜绝 `../` 穿越；逐项独立成败 |
 | 操作日志 | `logs/clean-YYYYMMDD.log`（人类可读）+ `logs/clean-YYYYMMDD.jsonl`（历史页数据源） |
+| 定时自动清理四条红线 | 默认关闭 · 只清 `safe` 级 · 扫描结果超 7 天跳过本轮 · 只进回收站且写历史（`auto-oneclick`）；与一键清理共用同一份服务端枚举清单，自动清理不可能清得更多 |
 
 ## 增量扫描的边界（重要）
 
@@ -75,13 +77,17 @@ build_exe.bat        （或命令行：python -m PyInstaller --onefile --name Ap
 python run_tests.py
 ```
 
-会自动拉起服务并依次跑五组：
+会自动拉起服务并依次跑 **9 组 269 项**（脚本自带临时服务，跑完自动回收；`APP_NO_AUTOCLEAN=1` 关闭常驻调度线程）：
 
 - `tests/test_rules.py` —— 规则层 47 项（含 1.0 两处误判的回归用例）
-- `tests/test_api.py` —— 接口与安全 30 项（跨站、越界、令牌重放、目标目录、截断字段）
+- `tests/test_config.py` —— 配置校验 41 项（非法规则硬拒绝、启动容错、自定义规则优先级）
+- `tests/test_api.py` —— 接口与安全 31 项（跨站、越界、令牌重放、目标目录、截断字段、版本贯通）
 - `tests/test_flow.py` —— 端到端 20 项（扫描→回收站→移动→撤销→永久删除→只读文件→保护目录）
 - `tests/test_increment.py` —— 增量 14 项（冷目录复用、深层新增检出、快照落盘、fresh 强制全量）
 - `tests/test_m3.py` —— 历史与撤销 21 项（manifest、路径穿越拒绝、undo 回滚、清空回收站守门）
+- `tests/test_m1.py` —— 配置接口与一键清理 27 项
+- `tests/test_auto.py` —— 定时自动清理 43 项（守门矩阵、非法配置回退、仅 safe 闭环、幂等、历史披露）
+- `tests/test_dup.py` —— 重复文件检测 25 项（0 误报陷阱、硬链接/占位跳过、partial 预算）
 
 退出码 0 表示全绿。测试会重建 `testdata/`，跑完即可删。
 
@@ -97,6 +103,7 @@ python run_tests.py
 - **扫描慢**：首次全量约 10-15 秒（57 万文件）；之后增量通常 <1 秒
 - **展开后子目录显示「—」**：该目录统计超时（1.5 秒预算），已跳过，不影响其他项
 - **只读属性文件**：工具会自动清掉只读属性后再删，不需要手动 `attrib -R`
+- **定时自动清理没执行？** 看设置页状态行的「当前判定」：默认关闭、扫描结果超 7 天、未到计划时刻、本周期已跑过都会跳过；另外服务必须保持运行（关掉黑窗口即停止），失败项只写进历史页，暂不主动弹窗告警
 
 ## 清理建议（优先级从高到低）
 
@@ -111,20 +118,26 @@ python run_tests.py
 ```
 server.py              路由与安全校验（入口）
 core/rules.py          路径判定：保护规则 + 四级分类（唯一判定入口）
+core/config.py         配置默认值、校验与坏值回退（config.json 运行时生成，不入库）
 core/scan.py           只读扫描、增量复用、排行、展开
 core/snapshot.py       扫描快照落盘与加载
+core/dupfind.py        重复文件检测（大小分组 → 首尾指纹 → 全文件 MD5）
+core/autoclean.py      定时自动清理的调度与守门（不含任何删除动作）
 core/actions.py        回收站 / 移动 / 永久删除 / 撤销 / 清空回收站
-core/history.py        操作历史（jsonl）与移动清单（manifest）
+core/history.py        操作历史（jsonl）+ 移动清单（manifest）+ 趋势聚合
 core/store.py          会话状态与一次性令牌
 core/errors.py         错误码 → 人话
 core/fsutil.py         长路径、越界判定、目录体积
 static/index.html      页面结构
 static/style.css       样式
-static/app.js          交互逻辑（搜索、筛选、键盘、CSV 导出）
-run_tests.py           一键测试（五组）
+static/app.js          交互逻辑（搜索、筛选、键盘、CSV 导出、设置页）
+build_exe.bat          PyInstaller onefile 构建（构建期依赖，运行期零依赖）
+run_tests.py           一键测试（9 组）
 tests/                 测试
-logs/                  操作日志 + 移动清单
+logs/                  操作日志 + 移动清单 + UI 核验截图
 cache/                 扫描快照
 CHANGELOG.md           版本变更记录
 PLAN-1.1.md            1.1 系列规划与实施偏差
+PLAN-1.3.md            1.3 发布规划
+PLAN-1.4.md            1.4 路线与实施偏差记录
 ```

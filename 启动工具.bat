@@ -1,5 +1,5 @@
 @echo off
-title AppData Disk Cleaner v1.3.0
+title AppData Disk Cleaner v1.4.0
 cd /d "%~dp0"
 
 chcp 65001 >nul 2>nul
@@ -16,7 +16,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Starting AppData Disk Cleaner v1.3.0 at http://127.0.0.1:8765 ...
+echo Starting AppData Disk Cleaner v1.4.0 at http://127.0.0.1:8765 ...
 echo Close this window to stop the service.
 echo.
 python server.py

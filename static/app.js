@@ -791,7 +791,49 @@ async function loadConfig(){
   $("#cfgPort").value = r.config.port || "";
   $("#cfgDupMin").value = (r.config.dup || {}).minSizeMB;
   $("#cfgDupBudget").value = (r.config.dup || {}).hashBudgetSec;
+  const ac = r.config.autoClean || {};
+  $("#cfgAutoOn").checked = !!ac.enabled;
+  $("#cfgAutoInterval").value = ac.interval || "daily";
+  if (!$("#cfgAutoHour").options.length){
+    for (let h = 0; h < 24; h++)
+      $("#cfgAutoHour").add(new Option(`${String(h).padStart(2, "0")}:00`, h));
+  }
+  $("#cfgAutoHour").value = String(ac.hour ?? 12);
+  loadAutoStatus();
   $("#cfgMsg").textContent = `${rules.length} 条自定义规则生效中 · 配置文件：${r.path}`;
+}
+
+async function loadAutoStatus(){
+  const el = $("#autoStatus");
+  try {
+    const s = await api("/api/auto/status");
+    const fmtT = ts => ts ? new Date(ts * 1000).toLocaleString() : "—";
+    const reasonMap = {
+      disabled: "未启用", "not-time": "未到今日计划时刻", already: "本周期已执行",
+      stale: "扫描结果超 7 天（跳过）", "no-result": "还没有扫描结果",
+      "bad-config": "配置非法", due: "已到期待执行",
+    };
+    el.innerHTML = `状态：${s.enabled ? `<b style="color:var(--ok)">已启用</b>` : "未启用"}` +
+      ` · 下次检查通过后计划于 ${fmtT(s.nextRun)}` +
+      ` · 上次自动清理：${s.lastRun ? `${fmtT(s.lastRun.at)}（${s.lastRun.count} 项 / ${fmt(s.lastRun.freed)}）` : "从未执行"}` +
+      ` · 扫描数据${s.fresh ? "新鲜（7 天内）" : `<span style="color:var(--warn)">过期（超 7 天将跳过）</span>`}` +
+      (s.enabled ? ` · 当前判定：${reasonMap[s.reason] || s.reason}` : "");
+  } catch(e){
+    el.textContent = "";
+  }
+}
+
+async function previewAutoScope(){
+  const out = $("#autoPreviewOut");
+  out.textContent = "读取中…";
+  try {
+    const r = await api("/api/oneclick/preview", {});
+    out.innerHTML = r.count
+      ? `将清理 <b>${r.count}</b> 个目录 / 共 <b>${fmt(r.total)}</b>（与一键清理清单一致，只含 safe 级）`
+      : esc(r.msg || "当前没有可清理项");
+  } catch(e){
+    out.textContent = e.message;
+  }
 }
 
 function parseRuleLines(text){
@@ -839,12 +881,18 @@ async function saveConfig(){
         minSizeMB: isNaN(dupMin) ? 10 : dupMin,
         hashBudgetSec: isNaN(dupBudget) ? 30 : dupBudget,
       },
+      autoClean: {
+        enabled: $("#cfgAutoOn").checked,
+        interval: $("#cfgAutoInterval").value,
+        hour: parseInt($("#cfgAutoHour").value, 10),
+      },
       rules,
     });
     state.config = r.config;
     msg.innerHTML = `<span style="color:var(--ok)">已保存 · ${r.customRules} 条自定义规则已生效</span>` +
       (r.warnings && r.warnings.length ? `<br><span style="color:var(--warn)">部分条目被丢弃：</span><br>` + r.warnings.map(esc).join("<br>") : "") +
       (r.restartHint ? `<br><span style="color:var(--warn)">${esc(r.restartHint)}</span>` : "");
+    loadAutoStatus();
     toast("设置已保存");
   } catch(e){
     msg.innerHTML = `<span style="color:var(--danger)">${esc(e.message)}</span>` +
@@ -1268,6 +1316,7 @@ $("#btnOneClick").addEventListener("click", openOneClick);
 $("#btnDoOneClick").addEventListener("click", doOneClick);
 $("#btnCfgSave").addEventListener("click", saveConfig);
 $("#btnCfgReload").addEventListener("click", () => loadConfig().catch(e => toast(e.message)));
+$("#btnAutoPreview").addEventListener("click", previewAutoScope);
 
 /* ---------- 以管理员身份重启 ---------- */
 async function restartAdmin(){

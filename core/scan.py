@@ -387,6 +387,7 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             "elapsed": ctx.elapsed,
             "disk": dir_usage(root),
             "scannedAt": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "scannedAtEpoch": int(time.time()),
             "incremental": {
                 "used": bool(ctx.reused_keys),
                 "reusedDirs": ctx.reused_dirs,

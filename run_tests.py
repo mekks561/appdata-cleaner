@@ -17,8 +17,8 @@ import urllib.request
 APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
-from tests import (test_api, test_config, test_dup, test_flow, test_increment,  # noqa: E402
-                   test_m1, test_m3, test_rules)
+from tests import (test_api, test_auto, test_config, test_dup, test_flow,  # noqa: E402
+                   test_increment, test_m1, test_m3, test_rules)
 from tests.common import BASE  # noqa: E402
 
 
@@ -36,7 +36,8 @@ def main():
     if info:
         print("复用已在运行的服务：v%s" % info.get("version"))
     else:
-        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_WARMUP="1", PYTHONUTF8="1")
+        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_WARMUP="1",
+                   APP_NO_AUTOCLEAN="1", PYTHONUTF8="1")
         proc = subprocess.Popen([sys.executable, "server.py"], cwd=APP, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         for _ in range(60):
@@ -59,6 +60,7 @@ def main():
         results.append(test_increment.run())
         results.append(test_m3.run())
         results.append(test_m1.run())
+        results.append(test_auto.run())
         results.append(test_dup.run())
     finally:
         if proc:

@@ -18,6 +18,9 @@ DEFAULTS = {
     "dest": "D:\\AppDataBackup",
     # dup 段预留给 1.3 M2（重复文件检测），先收进配置避免下版再迁移
     "dup": {"minSizeMB": 10, "hashBudgetSec": 30},
+    # V4-R1 定时自动清理安全缓存：默认必须关闭（四条不变量之一），
+    # 只支持 daily / weekly 两档，不做更细粒度（见 PLAN-1.4 风险 1）
+    "autoClean": {"enabled": False, "interval": "daily", "hour": 12},
     "rules": [],
 }
 
@@ -74,6 +77,26 @@ def _validate_dup(v):
         if not isinstance(n, int) or isinstance(n, bool) or not (5 <= n <= 600):
             return None, "dup.hashBudgetSec 必须是 5-600 的整数（秒）"
         out["hashBudgetSec"] = n
+    return out, None
+
+
+def _validate_auto_clean(v):
+    if not isinstance(v, dict):
+        return None, "autoClean 段必须是对象"
+    out = dict(DEFAULTS["autoClean"])
+    if "enabled" in v:
+        if not isinstance(v["enabled"], bool):
+            return None, "autoClean.enabled 必须是布尔值"
+        out["enabled"] = v["enabled"]
+    if "interval" in v:
+        if v["interval"] not in ("daily", "weekly"):
+            return None, "autoClean.interval 只支持 daily / weekly"
+        out["interval"] = v["interval"]
+    if "hour" in v:
+        n = v["hour"]
+        if not isinstance(n, int) or isinstance(n, bool) or not (0 <= n <= 23):
+            return None, "autoClean.hour 必须是 0-23 的整数"
+        out["hour"] = n
     return out, None
 
 
@@ -163,6 +186,13 @@ def validate(raw):
         cfg["dup"] = dict(DEFAULTS["dup"])
     else:
         cfg["dup"] = dup
+
+    auto, err = _validate_auto_clean(raw.get("autoClean") or DEFAULTS["autoClean"])
+    if err:
+        errors.append(err)
+        cfg["autoClean"] = dict(DEFAULTS["autoClean"])
+    else:
+        cfg["autoClean"] = auto
 
     rules_out, rule_errors = _validate_rules(raw.get("rules") or [])
     # 规则错误按硬错误处理：保存接口必须 400 拒绝，不能静默丢掉用户
