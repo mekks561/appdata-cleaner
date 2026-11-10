@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
-"""1.5 安全门禁矩阵 + 配置向前兼容回归。
+"""安全门禁矩阵 + 配置向前兼容回归。
 
-四条不变量（任一破坏则版本不发布）集中在此，作为发版前的一键门禁：
+不变量（任一破坏则版本不发布）集中在此，作为发版前的一键门禁：
 
   G1 仅 safe       —— 四级分类各自成立；autoclean 调度模块自身不含任何删除调用，
                       删除动作只能经注入的 run_fn（服务端枚举单点）发生；
   G2 7 天新鲜度    —— is_due 的 stale / no-result 守门矩阵；
-  G3 默认关闭      —— DEFAULTS 默认关闭；坏值整段回退关闭；
+  G3 默认关闭      —— DEFAULTS 默认关闭；坏值整段回退关闭；CLI 空参数不触发；
   G4 全部可撤销    —— RUN_MODE 固定为 auto-oneclick（历史可追溯），
-                      maybe_run 只在 due 时调用执行函数。
+                      maybe_run 只在 due 时调用执行函数；
+  G5 无第二套删除路径（1.6）—— CLI 源码不含任何删除 API；
+  G6 显式确认（1.6）      —— 无 --yes 时执行函数零调用、退出码 4。
 
 配置向前兼容：旧 config 缺新字段自动补默认、坏值回退默认、旧文件加载不断服务。
 """
 
+import contextlib
+import io
+import json
 import os
 import shutil
 import sys
@@ -21,7 +26,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import cli  # noqa: E402
 from core import autoclean, config, rules  # noqa: E402
+from core.fsutil import inside  # noqa: E402
 from tests.common import Checker  # noqa: E402
 
 U = r"C:\Users\Administrator\AppData"
@@ -64,6 +71,8 @@ def test_g3_default_off(c):
     cfg, errs, _w = config.validate({"autoClean": {"enabled": "yes"}})
     c.ok("坏 enabled → 整段回退关闭", bool(errs) and not cfg["autoClean"]["enabled"],
          cfg["autoClean"])
+    c.eq("CLI 空参数不触发（仍走服务）", cli.is_cli_invocation([]), False)
+    c.eq("CLI --takeover 不触发", cli.is_cli_invocation(["--takeover"]), False)
 
 
 def test_g4_recoverable(c):
@@ -77,6 +86,99 @@ def test_g4_recoverable(c):
     r = autoclean.maybe_run(_ac(), lambda: None, lambda: NOW - 9 * 86400,
                             lambda: calls.append(1) or (0, 0), now=NOW)
     c.eq("stale 不调用执行函数", (r["ran"], calls), (False, []))
+
+
+# ---------------- G5 / G6（1.6 CLI） ----------------
+
+def test_g5_cli_no_delete(c):
+    """CLI 只能是薄参数层，删除必须全部经注入的服务端单点。"""
+    src = open(cli.__file__, encoding="utf-8").read()
+    for call in ("os.remove", "os.unlink", "shutil.rmtree", "force_remove",
+                 "permanent(", "recycle(", "exec_action("):
+        c.ok("CLI 源码不含 %s（无第二套删除路径）" % call, call not in src)
+
+
+def _fake_app(tmp):
+    """最小宿主：让 CLI 走到分发分支，精确观测执行函数是否被调用。"""
+    calls = []
+
+    class _State:
+        def begin(self, ctx, r):
+            pass
+
+        def finish(self, result=None, phase=None):
+            pass
+
+        def fail(self, phase):
+            pass
+
+    class _Scan:
+        @staticmethod
+        def run_scan(root, depth, hot, big, on_begin=None, on_finish=None,
+                     fresh=False, cache_dir=None):
+            class _Ctx:
+                phase = "完成"
+            if on_begin:
+                on_begin(_Ctx(), root)
+            res = {"totalSize": 1024, "fileCount": 1, "elapsed": 0,
+                   "errorCount": 0, "scannedAt": "", "incremental": {}}
+            if on_finish:
+                on_finish(res, None)
+            return res
+
+    class App:
+        APP_VERSION = "1.6.0"
+        # 门禁只验证「显式确认」分支；宿主用临时目录自身作为用户目录，
+        # 避免系统 temp 的 8.3 短路径让 inside 误判越界（越界由 test_cli 真实路径覆盖）。
+        USER_HOME = os.path.dirname(tmp)
+        DEFAULT_ROOT = tmp
+        DATA_DIR = os.path.join(tmp, "cache")
+        LOG_DIR = os.path.join(tmp, "logs")
+        STATE = _State()
+        scan = _Scan()
+        inside = staticmethod(inside)
+
+        def plan_oneclick(self):
+            return ([{"p": os.path.join(tmp, "Local", "Temp"),
+                      "s": 1024, "level": "safe"}], None)
+
+        def run_oneclick(self, mode):
+            calls.append(mode)
+            return ({"freedBySize": 1024, "okCount": 1, "failCount": 0,
+                     "results": []}, None)
+
+    app = App()
+    app.calls = calls
+    return app
+
+
+def _cli_json(argv, app):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = cli.run_cli(argv, app)
+    try:
+        payload = json.loads(buf.getvalue().strip())
+    except Exception:
+        payload = {}
+    return code, payload
+
+
+def test_g6_explicit_confirm(c):
+    """缺 --yes 时绝不调用执行函数；给了 --yes 才走 cli-oneclick。"""
+    tmp = tempfile.mkdtemp(prefix="acli16-")
+    try:
+        app = _fake_app(tmp)
+        code, p = _cli_json(["--oneclick", "--root", tmp, "--json"], app)
+        c.eq("无 --yes 退出码 4", code, 4)
+        c.eq("无 --yes 未删除", p.get("deleted"), False)
+        c.eq("无 --yes needsConfirm", p.get("needsConfirm"), True)
+        c.eq("无 --yes 执行函数零调用", app.calls, [])
+        code2, p2 = _cli_json(["--oneclick", "--yes", "--root", tmp, "--json"], app)
+        c.eq("有 --yes 退出码 0", code2, 0)
+        c.eq("有 --yes 调用一次且 mode 正确", app.calls, [cli.CLI_MODE])
+        c.eq("有 --yes deleted", p2.get("deleted"), True)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ---------------- 配置向前兼容 ----------------
@@ -130,11 +232,13 @@ def test_compat(c):
 
 
 def run():
-    c = Checker("安全门禁矩阵 + 配置兼容 (1.5)")
+    c = Checker("安全门禁矩阵 G1-G6 + 配置兼容")
     test_g1_only_safe(c)
     test_g2_freshness(c)
     test_g3_default_off(c)
     test_g4_recoverable(c)
+    test_g5_cli_no_delete(c)
+    test_g6_explicit_confirm(c)
     test_compat(c)
     return c.report()
 

@@ -22,7 +22,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 BUILD = "2026-11-09"
 
 from core import actions, config, dupfind, history, rules, scan  # noqa: E402
@@ -31,6 +31,7 @@ from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
 from core import autoclean  # noqa: E402
+import cli  # noqa: E402  —— 1.6 命令行入口（顶层导入确保 PyInstaller 收进包）
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # PyInstaller onefile：静态资源在解压目录（只读），config/logs/cache 必须放 exe 旁边（可写）
@@ -170,21 +171,33 @@ def collect_safe_items():
     return items
 
 
-def run_oneclick(mode):
-    """枚举 + 二次复核 level + 回收站执行 + 写历史。
+def plan_oneclick():
+    """一键清理的清单单点：从扫描树枚举 safe 项 + 二次复核 level。
 
-    手动（oneclick，需确认词）与自动（auto-oneclick，守门见 autoclean.py）
-    走同一份枚举与复核代码 —— 自动清理永远不可能比手动清理清得更多。
-    返回 (result dict, error str)，二者互斥。
+    CLI 的 --dry-run 与真实执行共用这里，清单不可能漂移。
+    返回 (items, error)；items 是扫描树节点（含 p/s/level）。
     """
     items = collect_safe_items()
     if items is None:
         return None, "还没有扫描结果"
-    paths = [it["p"] for it in items]
     # 再核一遍 level：扫描树是旧的而规则可能已更新（比如刚删掉一条 safe 自定义规则）
-    paths = [p for p in paths if rules.classify(p)["level"] == "safe"]
-    if not paths:
+    items = [it for it in items if rules.classify(it["p"])["level"] == "safe"]
+    if not items:
         return None, "没有可清理的安全缓存项"
+    return items, None
+
+
+def run_oneclick(mode):
+    """枚举 + 二次复核 level + 回收站执行 + 写历史。
+
+    手动（oneclick，需确认词）、自动（auto-oneclick，守门见 autoclean.py）
+    与 CLI（cli-oneclick）走同一份枚举与复核代码 —— 谁都不可能清得更多。
+    返回 (result dict, error str)，二者互斥。
+    """
+    items, err = plan_oneclick()
+    if err:
+        return None, err
+    paths = [it["p"] for it in items]
 
     root = STATE.root(DEFAULT_ROOT)
     result = actions.exec_action(paths, "recycle", None, root)
@@ -946,4 +959,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # 1.6 CLI：命中动作 flag 走命令行分支，不启 HTTP 服务、不开浏览器、不启调度线程。
+    # 其余情况（空参数 / --takeover）与 1.5.0 的启动路径完全一致。
+    if cli.is_cli_invocation(sys.argv[1:]):
+        sys.exit(cli.run_cli(sys.argv[1:], sys.modules[__name__]))
     main()

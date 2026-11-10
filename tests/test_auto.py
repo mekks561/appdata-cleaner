@@ -85,8 +85,10 @@ def test_gates(c):
          r in ("not-time", "due"), r)
 
     lt = time.localtime(NOW)
-    if lt.tm_hour >= 13:
-        d, r = due(cfg_ac(hour=14), None, NOW)
+    if 13 <= lt.tm_hour <= 22:
+        # 用「下一个整点」做未来计划时刻：写死 hour=14 在 15 点之后会退化成
+        # 「已过计划时刻」，导致本用例随运行时间漂移（1.6 全量回归时发现）。
+        d, r = due(cfg_ac(hour=lt.tm_hour + 1), None, NOW)
         c.eq("未到计划时刻 → not-time", (d, r), (False, "not-time"))
         d, r = due(cfg_ac(hour=lt.tm_hour - 1), None, NOW)
         c.ok("已过计划时刻且从未跑过 → due", d, r)

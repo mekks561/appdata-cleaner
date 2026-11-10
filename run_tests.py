@@ -17,9 +17,9 @@ import urllib.request
 APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
-from tests import (test_api, test_auto, test_config, test_diff, test_dup,  # noqa: E402
-                   test_ext, test_flow, test_gate, test_increment, test_m1,
-                   test_m3, test_parallel, test_rules, test_warn)
+from tests import (test_api, test_auto, test_cli, test_config, test_diff,  # noqa: E402
+                   test_dup, test_ext, test_flow, test_gate, test_increment,
+                   test_m1, test_m3, test_parallel, test_rules, test_warn)
 from tests.common import BASE  # noqa: E402
 
 
@@ -65,11 +65,13 @@ def main():
         results.append(test_dup.run())
         results.append(test_warn.run())       # 只读写配置校验，不碰 testdata
         results.append(test_gate.run())       # 安全门禁矩阵 + 配置兼容（单元，独立临时目录）
-        # 这三组放在最后：test_parallel 用独立临时目录；test_diff 与 test_ext
-        # 会清掉 testdata 的快照并改动 testdata 内容，不应影响前面的组。
+        # 这几组放在最后：test_parallel 用独立临时目录；test_diff 与 test_ext
+        # 会清掉 testdata 的快照并改动 testdata 内容；test_cli 在 run() 内才
+        # 延迟 import server（加载期会应用用户自定义规则），不应影响前面的组。
         results.append(test_parallel.run())
         results.append(test_diff.run())
         results.append(test_ext.run())
+        results.append(test_cli.run())       # 1.6 CLI：不启服务，注入 server 模块直调
     finally:
         if proc:
             proc.terminate()
