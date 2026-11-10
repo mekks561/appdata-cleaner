@@ -22,7 +22,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 BUILD = "2026-11-09"
 
 from core import actions, config, dupfind, history, rules, scan  # noqa: E402
@@ -198,22 +198,36 @@ def run_oneclick(mode):
 
 
 def _auto_run_fn():
-    """调度线程注入的执行动作：跑一次自动清理，返回 (freed, okCount)。"""
+    """调度线程注入的执行动作：跑一次自动清理，返回 (freed, okCount)。
+
+    执行失败（无扫描结果 / 无 safe 项）也写一条 auto-oneclick 历史，
+    让设置页「上次自动清理」能披露失败原因，而不是记成「释放 0 项」。
+    """
     result, err = run_oneclick(autoclean.RUN_MODE)
     if err:
+        history.append(LOG_DIR, {
+            "mode": autoclean.RUN_MODE,
+            "error": err,
+            "ok": 0, "fail": 0, "count": 0,
+            "freed": 0, "freedBySize": 0,
+            "version": APP_VERSION,
+            "items": [],
+        })
         return 0, 0
     freed = result.get("freedBySize") or result.get("freed") or 0
     return freed, sum(1 for r in result["results"] if r["ok"])
 
 
 def last_auto_run():
-    """读历史，返回最近一次自动清理 {at, freed, count} 或 None。"""
+    """读历史，返回最近一次自动清理 {at, freed, count, fail, error} 或 None。"""
     for rec in history.read(LOG_DIR, 300):
         if rec.get("mode") == autoclean.RUN_MODE:
             return {
                 "at": rec.get("epoch") or 0,
                 "freed": rec.get("freedBySize") or rec.get("freed") or 0,
                 "count": rec.get("ok") or 0,
+                "fail": rec.get("fail") or 0,
+                "error": rec.get("error") or "",
             }
     return None
 
@@ -233,6 +247,9 @@ def _scan_epoch():
         return None
 
 
+SCHEDULER = None      # 自动清理调度线程实例（main 启动后赋值；测试环境为 None）
+
+
 def auto_status():
     """汇总自动清理状态（UI 披露 + 测试断言用）。"""
     ac = dict(CFG.get("autoClean") or config.DEFAULTS["autoClean"])
@@ -245,6 +262,7 @@ def auto_status():
     target = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, ac["hour"], 0, 0, 0, 0, -1))
     if lt.tm_hour >= ac["hour"]:
         target += 86400
+    sched_err = SCHEDULER.last_error if SCHEDULER else None
     return {
         "enabled": ac.get("enabled", False),
         "interval": ac.get("interval"),
@@ -255,6 +273,8 @@ def auto_status():
         "scanAge": (int(time.time() - scan_epoch) if scan_epoch else None),
         "fresh": scan_epoch is not None and
                  time.time() - scan_epoch <= autoclean.FRESH_SECONDS,
+        "healthy": sched_err is None,
+        "lastError": sched_err,
     }
 
 
@@ -633,26 +653,18 @@ class Handler(BaseHTTPRequestHandler):
         """手动触发一次自动清理守门检查（调度线程每 5 分钟也走同一入口）。
 
         守门不通过时返回 {"ran": false, "reason": ...}；通过则执行并返回
-        释放量与项数。与后台调度共用 maybe_run —— 测试无需等 5 分钟。
+        释放量与项数。与后台调度共用 maybe_run + _auto_run_fn ——
+        手动触发与后台执行不可能有第二套行为（1.5 单点收口）。
         """
-        holder = {"err": None}
-
-        def run():
-            result, err = run_oneclick(autoclean.RUN_MODE)
-            if err:
-                holder["err"] = err
-                return 0, 0
-            # freedBySize 是逐项实算，比磁盘 free 差值稳定（小清理可能差值为 0）
-            freed = result.get("freedBySize") or result.get("freed") or 0
-            return freed, sum(1 for r in result["results"] if r["ok"])
-
         r = autoclean.maybe_run(
             CFG,
             lambda: (last_auto_run() or {}).get("at"),
             _scan_epoch,
-            run)
-        if holder["err"]:
-            r["error"] = holder["err"]
+            _auto_run_fn)
+        # 执行失败（无扫描结果 / 无 safe 项）时，_auto_run_fn 已把原因写进
+        # auto-oneclick 历史；这里读回给调用方，测试与 UI 都能直接看到。
+        if r.get("ran") and not r.get("freed") and not r.get("count"):
+            r["error"] = (last_auto_run() or {}).get("error") or ""
         return self._json(r)
 
     def _post_open(self, body):
@@ -920,6 +932,8 @@ def main():
                 " 自动清理完成：释放 %.1f MB（%d 项）"
                 % (r.get("freed", 0) / 1048576.0, r.get("count", 0))))
         sched.start()
+        global SCHEDULER
+        SCHEDULER = sched
         if CFG["autoClean"]["enabled"]:
             print(" 定时自动清理已启用（%s，每天 %02d 点）：每 %d 分钟检查一次"
                   % (CFG["autoClean"]["interval"], CFG["autoClean"]["hour"],

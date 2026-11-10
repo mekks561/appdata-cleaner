@@ -929,10 +929,16 @@ async function loadAutoStatus(){
       stale: "扫描结果超 7 天（跳过）", "no-result": "还没有扫描结果",
       "bad-config": "配置非法", due: "已到期待执行",
     };
+    const lastTxt = s.lastRun
+      ? `${fmtT(s.lastRun.at)}（${s.lastRun.count} 项 / ${fmt(s.lastRun.freed)}` +
+        (s.lastRun.fail ? `，失败 ${s.lastRun.fail} 项` : "") +
+        (s.lastRun.error ? `，<span style="color:var(--warn)">${esc(s.lastRun.error)}</span>` : "") + `）`
+      : "从未执行";
     el.innerHTML = `状态：${s.enabled ? `<b style="color:var(--ok)">已启用</b>` : "未启用"}` +
       ` · 下次检查通过后计划于 ${fmtT(s.nextRun)}` +
-      ` · 上次自动清理：${s.lastRun ? `${fmtT(s.lastRun.at)}（${s.lastRun.count} 项 / ${fmt(s.lastRun.freed)}）` : "从未执行"}` +
+      ` · 上次自动清理：${lastTxt}` +
       ` · 扫描数据${s.fresh ? "新鲜（7 天内）" : `<span style="color:var(--warn)">过期（超 7 天将跳过）</span>`}` +
+      (s.lastError ? ` · <span style="color:var(--warn)">调度异常：${esc(s.lastError.message)}（${fmtT(s.lastError.at)}）</span>` : "") +
       (s.enabled ? ` · 当前判定：${reasonMap[s.reason] || s.reason}` : "");
   } catch(e){
     el.textContent = "";

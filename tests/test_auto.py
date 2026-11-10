@@ -25,26 +25,27 @@ LOG_DIR = os.path.join(APP, "logs")
 
 
 def _drop_auto_history():
-    """从当天历史 jsonl 里移除 auto-oneclick 行，让幂等守门归零。
+    """从全部历史 jsonl 里移除 auto-oneclick 行，让幂等守门归零。
 
     幂等以「历史里的最近一次自动清理」为准 —— 删掉记录即视为新周期开始，
     顺带验证了幂等判定确实读的是历史而不是内存。
+    不只清当天文件：跨天残留的旧记录同样会干扰 lastRun 断言。
     """
-    name = "clean-%s.jsonl" % time.strftime("%Y%m%d")
-    path = os.path.join(LOG_DIR, name)
-    if not os.path.isfile(path):
-        return
-    kept = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                if json.loads(line).get("mode") == autoclean.RUN_MODE:
-                    continue
-            except Exception:
-                pass
-            kept.append(line)
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(kept)
+    for name in os.listdir(LOG_DIR):
+        if not name.startswith("clean-") or not name.endswith(".jsonl"):
+            continue
+        path = os.path.join(LOG_DIR, name)
+        kept = []
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    if json.loads(line).get("mode") == autoclean.RUN_MODE:
+                        continue
+                except Exception:
+                    pass
+                kept.append(line)
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(kept)
 
 
 def _at(hour, minute=0):
@@ -135,6 +136,29 @@ def test_maybe_run(c):
     c.eq("执行次数仍 1", len(calls), 1)
 
 
+# ---------------- 单元：调度异常可见化（1.5） ----------------
+
+def test_scheduler_error(c):
+    cfg = cfg_ac(hour=0)
+
+    def boom():
+        raise RuntimeError("注入失败")
+
+    sched = autoclean.Scheduler(lambda: cfg, lambda: None, lambda: NOW, boom)
+    r = sched.step()
+    c.eq("run_fn 异常 → reason=scheduler-error", r.get("reason"), "scheduler-error")
+    c.ok("异常不向上抛", r.get("ran") is False, r)
+    c.eq("last_error.type", sched.last_error.get("type"), "RuntimeError")
+    c.ok("last_error.message 保留", "注入失败" in sched.last_error.get("message", ""))
+    c.ok("snapshot.lastError 可披露", bool(sched.snapshot().get("lastError")))
+
+    sched2 = autoclean.Scheduler(lambda: cfg_ac(enabled=False), lambda: None,
+                                 lambda: NOW, boom)
+    r2 = sched2.step()
+    c.eq("正常 step 不调用 run_fn", r2.get("reason"), "disabled", r2)
+    c.ok("正常 step 无 last_error", sched2.last_error is None)
+
+
 # ---------------- 单元：config 校验 ----------------
 
 def test_config(c):
@@ -164,10 +188,33 @@ def test_api(c):
     st, s = get("/api/auto/status")
     c.eq("auto/status 200", st, 200)
     c.eq("默认未启用", s.get("enabled"), False)
+    c.ok("默认 healthy（无调度异常记录）", s.get("healthy") is True, s)
+    c.ok("默认无 lastError", s.get("lastError") is None, s)
 
     st, r = post("/api/auto/check", {})
     c.eq("未启用时 check → 不执行", (st, r.get("ran"), r.get("reason")),
          (200, False, "disabled"))
+
+    # —— 1.5：执行失败可见。有扫描结果但无 safe 项时，
+    #    run_oneclick 返回错误，_auto_run_fn 写历史 error，状态行可披露 ——
+    _drop_auto_history()
+    st, _b = post("/api/config", {
+        "port": 8765, "dest": "D:\\AppDataBackup",
+        "autoClean": {"enabled": True, "interval": "daily", "hour": 0},
+        "rules": [],
+    })
+    c.eq("开启自动清理 → 保存 200", st, 200, _b)
+    empty_dir = os.path.join(ROOT, "_auto_empty")
+    os.makedirs(empty_dir, exist_ok=True)
+    try:
+        scan(root=empty_dir, fresh=True)
+        st, r = post("/api/auto/check", {})
+        c.eq("无 safe 项也算执行过（不静默）", r.get("ran"), True, r)
+        st, s = get("/api/auto/status")
+        c.ok("lastRun.error 披露失败原因", bool((s.get("lastRun") or {}).get("error")), s)
+    finally:
+        shutil.rmtree(empty_dir, ignore_errors=True)
+    _drop_auto_history()
 
     # 开启（hour=0 保证到点）并准备新鲜扫描
     _cfg, _w = None, None
@@ -239,6 +286,7 @@ def run():
     try:
         test_gates(c)
         test_maybe_run(c)
+        test_scheduler_error(c)
         test_config(c)
         test_api(c)
     finally:

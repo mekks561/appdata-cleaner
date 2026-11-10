@@ -110,9 +110,40 @@ class Scheduler(threading.Thread):
         self.on_done = on_done          # 回调(result dict)，供日志/状态披露
         self._stop = threading.Event()
         self.last_result = None
+        self.last_error = None          # 最近一次调度异常（1.5 可观测性）
 
     def stop(self):
         self._stop.set()
+
+    def step(self):
+        """单次检查（供 run 循环与测试直接调用）。
+
+        异常不向上抛、不带崩线程：记录到 last_error，UI 可追溯；
+        守门逻辑（maybe_run）保持不变，不因记录错误而触发清理。
+        """
+        try:
+            r = maybe_run(self.cfg_fn(), self.last_epoch_fn,
+                          self.scan_epoch_fn, self.run_fn)
+            if r.get("ran") or (self.on_done and r.get("reason") == "stale"):
+                self.last_result = r
+                if r.get("ran") and self.on_done:
+                    self.on_done(r)
+            return r
+        except Exception as ex:
+            self.last_error = {
+                "at": int(time.time()),
+                "type": type(ex).__name__,
+                "message": str(ex)[:200],
+            }
+            return {"ran": False, "reason": "scheduler-error",
+                    "error": str(ex)[:200]}
+
+    def snapshot(self):
+        """调度线程当前健康状态（供 /api/auto/status 披露）。"""
+        return {
+            "running": self.is_alive(),
+            "lastError": self.last_error,
+        }
 
     def run(self):
         # 启动后先等一个完整间隔再检查：预热扫描大概率还没跑完，
@@ -120,13 +151,5 @@ class Scheduler(threading.Thread):
         if self._stop.wait(CHECK_INTERVAL):
             return
         while not self._stop.is_set():
-            try:
-                r = maybe_run(self.cfg_fn(), self.last_epoch_fn,
-                              self.scan_epoch_fn, self.run_fn)
-                if r.get("ran") or (self.on_done and r.get("reason") == "stale"):
-                    self.last_result = r
-                    if r.get("ran") and self.on_done:
-                        self.on_done(r)
-            except Exception:
-                pass                    # 调度线程绝不带崩服务
+            self.step()
             self._stop.wait(CHECK_INTERVAL)
