@@ -22,10 +22,11 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 BUILD = "2026-11-11"
 
 from core import actions, config, dupfind, guide, history, rulepkg, rules, scan  # noqa: E402
+from core import roots as roots_mod  # noqa: E402  —— 1.9 多根校验单点
 from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
@@ -440,6 +441,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/config":
             return self._json({"config": CFG, "path": CFG_PATH,
                                "customRules": rules.user_rule_count()})
+        if u.path == "/api/roots":
+            return self._get_roots()
         if u.path == "/api/rules/export":
             return self._get_rules_export()
         return self._json({"error": "not found"}, 404)
@@ -496,6 +499,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_restart_admin()
         if u.path == "/api/unlock-guide":
             return self._post_unlock_guide(body)
+        if u.path == "/api/roots/add":
+            return self._post_roots_add(body)
+        if u.path == "/api/roots/remove":
+            return self._post_roots_remove(body)
         if u.path == "/api/dup/scan":
             return self._post_dup_scan(body)
         if u.path == "/api/dup/clean":
@@ -515,6 +522,59 @@ class Handler(BaseHTTPRequestHandler):
         """解锁引导（v1.8）：只下发说明与官方链接，零 IO、零执行（PLAN-1.8 §4）。"""
         st, out = guide.build_guide(body.get("path"))
         return self._json(out, st)
+
+    # ---------- 多根目录（1.9）----------
+    def _roots_list(self):
+        """视图：内置默认根恒排第一，用户登记根随后。"""
+        items = [{"path": DEFAULT_ROOT, "label": "AppData（默认）", "default": True}]
+        for r in (CFG.get("roots") or []):
+            items.append({"path": r["path"],
+                           "label": r.get("label") or os.path.basename(r["path"]),
+                           "default": False})
+        return items
+
+    def _get_roots(self):
+        return self._json({"roots": self._roots_list(),
+                           "defaultRoot": DEFAULT_ROOT, "userHome": USER_HOME,
+                           "max": roots_mod.MAX_ROOTS,
+                           "current": STATE.root(DEFAULT_ROOT)})
+
+    def _save_roots(self, new_list):
+        """根列表落盘单点：validate → config.save(.bak) → 更新内存。"""
+        global CFG, CFG_WARNINGS
+        cfg, errs, warns = config.validate(dict(CFG, roots=new_list))
+        if errs:
+            return self._json({"error": "扫描根未保存", "details": errs}, 400)
+        err = config.save(APP_DIR, cfg)
+        if err:
+            return self._json({"error": err}, 500)
+        CFG, CFG_WARNINGS = cfg, warns
+        return self._json({"ok": True, "roots": self._roots_list(), "warnings": warns})
+
+    def _post_roots_add(self, body):
+        cur = list(CFG.get("roots") or [])
+        if len(cur) >= roots_mod.MAX_ROOTS:
+            return self._json({"error": "扫描根最多 %d 个" % roots_mod.MAX_ROOTS}, 400)
+        existing = [x["path"] for x in self._roots_list()]
+        item, err = roots_mod.validate_item(body.get("path"), USER_HOME,
+                                            existing, body.get("label"))
+        if err:
+            return self._json({"error": err}, 400)
+        cur.append(item)
+        return self._save_roots(cur)
+
+    def _post_roots_remove(self, body):
+        target = roots_mod.norm(body.get("path"))
+        if target is None:
+            return self._json({"error": "path 非法"}, 400)
+        if target.lower() == roots_mod.norm(DEFAULT_ROOT).lower():
+            return self._json({"error": "内置默认根不能删除"}, 400)
+        cur = list(CFG.get("roots") or [])
+        kept = [r for r in cur
+                if (roots_mod.norm(r["path"]) or "").lower() != target.lower()]
+        if len(kept) == len(cur):
+            return self._json({"error": "该扫描根不存在"}, 400)
+        return self._save_roots(kept)
 
     def _post_scan(self, body):
         if STATE.running():
@@ -620,8 +680,13 @@ class Handler(BaseHTTPRequestHandler):
                            "freed": max(0, after - before)}, 200 if ok else 400)
 
     def _post_config(self, body):
-        """保存设置（R3）。逐字段校验，不通过就整体拒绝，绝不写半份配置。"""
+        """保存设置（R3）。逐字段校验，不通过就整体拒绝，绝不写半份配置。
+
+        1.9 兼容：旧客户端不带 roots 字段时沿用当前值，避免清空根注册表。
+        """
         global CFG, CFG_WARNINGS
+        if isinstance(body, dict) and "roots" not in body:
+            body = dict(body, roots=list(CFG.get("roots") or []))
         cfg, errors, warnings = config.validate(body)
         if errors:
             return self._json({"error": "配置未保存，存在非法字段",

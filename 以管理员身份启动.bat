@@ -1,5 +1,5 @@
 @echo off
-title AppData Disk Cleaner v1.8.0 (Administrator)
+title AppData Disk Cleaner v1.9.0 (Administrator)
 cd /d "%~dp0"
 
 net session >nul 2>&1
@@ -24,7 +24,7 @@ if errorlevel 1 (
 )
 
 echo Running as ADMINISTRATOR - protected folders can now be cleaned.
-echo Starting AppData Disk Cleaner v1.8.0 at http://127.0.0.1:8765 ...
+echo Starting AppData Disk Cleaner v1.9.0 at http://127.0.0.1:8765 ...
 echo Close this window to stop the service.
 echo.
 python server.py

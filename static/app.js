@@ -80,6 +80,7 @@ async function init(){
     if (!info.admin) $("#adminBar").style.display = "block";
     loadTrashSize();
     loadConfig().catch(() => {});
+    loadRoots().catch(() => {});
     const st = await api("/api/scan/status");
     if (st.running){
       // R4 启动预热正在跑：直接接上进度条轮询
@@ -101,6 +102,64 @@ function renderNet(){
   const pct = (used / state.diskTotal * 100).toFixed(1);
   $("#netinfo").innerHTML =
     `C 盘 已用 <b>${fmt(used)}</b> / ${fmt(state.diskTotal)}（${pct}%）<br>可用 <b>${fmt(state.diskFree)}</b>`;
+}
+
+/* ---------- 多根目录（1.9）：登记只是快捷方式，不放宽任何校验 ---------- */
+let rootsCache = [];
+
+async function loadRoots(){
+  try {
+    const r = await api("/api/roots");
+    rootsCache = r.roots || [];
+    renderRoots(r.userHome || "");
+  } catch(e){ /* 老服务端无此接口时静默降级，页面其余功能照常 */ }
+}
+
+function renderRoots(home){
+  $("#rootList").innerHTML = rootsCache.map(x =>
+    `<option value="${esc(x.path)}" label="${esc(x.label)}"></option>`).join("");
+  if (home) $("#rootsHome").textContent = home;
+  $("#rootsList").innerHTML = rootsCache.map(x => `
+    <div class="lrow" data-rootpick="${esc(x.path)}" style="cursor:pointer">
+      <span class="s" style="width:110px;flex:none">${esc(x.label)}</span>
+      <span class="p" title="${esc(x.path)}">${esc(x.path)}</span>
+      ${x.default
+        ? '<span class="tag protected">内置</span>'
+        : `<button class="btn ghost" data-rootremove="${esc(x.path)}">删除</button>`}
+    </div>`).join("") || '<div class="lrow">暂无登记的根目录</div>';
+}
+
+function openRoots(){
+  $("#rootsMsg").textContent = "";
+  renderRoots($("#rootsHome").textContent);
+  $("#maskRoots").classList.add("on");
+}
+
+async function addRoot(){
+  const path = $("#newRootPath").value.trim();
+  const label = $("#newRootLabel").value.trim();
+  if (!path) return toast("请填写根目录绝对路径");
+  const btn = $("#btnRootsAdd"); btn.disabled = true;
+  try {
+    const r = await api("/api/roots/add", { path, label });
+    rootsCache = r.roots || [];
+    renderRoots($("#rootsHome").textContent);
+    $("#newRootPath").value = ""; $("#newRootLabel").value = "";
+    $("#rootsMsg").textContent = (r.warnings && r.warnings.length)
+      ? "已添加，但有警告：" + r.warnings.join("；") : "已添加：" + path;
+  } catch(e){
+    $("#rootsMsg").textContent = "添加失败：" + e.message;
+  } finally { btn.disabled = false; }
+}
+
+async function removeRoot(path, ev){
+  ev && ev.stopPropagation();
+  try {
+    const r = await api("/api/roots/remove", { path });
+    rootsCache = r.roots || [];
+    renderRoots($("#rootsHome").textContent);
+    $("#rootsMsg").textContent = "已删除：" + path;
+  } catch(e){ $("#rootsMsg").textContent = "删除失败：" + e.message; }
 }
 
 /* ---------- 扫描 ---------- */
@@ -1311,6 +1370,12 @@ document.addEventListener("click", e => {
   const t = e.target.closest("[data-close]");
   if (t) closeMask(t.dataset.close);
 
+  const rm = e.target.closest("[data-rootremove]");
+  if (rm){ removeRoot(rm.dataset.rootremove, e); return; }
+
+  const pick = e.target.closest("[data-rootpick]");
+  if (pick){ $("#root").value = pick.dataset.rootpick; closeMask("maskRoots"); return; }
+
   const caret = e.target.closest("[data-toggle]");
   if (caret) { toggleExpand(caret.dataset.toggle, e); return; }
 
@@ -1448,6 +1513,8 @@ $$("thead th.sortable").forEach(th => th.addEventListener("click", () => {
 }));
 
 $("#btnScan").addEventListener("click", () => startScan(false));
+$("#btnRoots").addEventListener("click", openRoots);
+$("#btnRootsAdd").addEventListener("click", addRoot);
 $("#btnRescan").addEventListener("click", () => startScan(false));
 $("#btnDiffRescan").addEventListener("click", () => startScan(true));
 $("#btnExtRescan").addEventListener("click", () => startScan(true));

@@ -12,6 +12,8 @@ import json
 import os
 import re
 
+from core import roots as roots_mod  # noqa: E402  —— 1.9 多根校验单点
+
 # 单一事实来源。server.py 的端口/默认 dest 都从这里取。
 DEFAULTS = {
     "port": 8765,
@@ -24,6 +26,8 @@ DEFAULTS = {
     # V4-R5 空间预警：AppData 总量超过该阈值（GB）时在结果页顶部提示；0 = 关闭
     "warnGB": 10,
     "rules": [],
+    # 1.9 多根目录：空表 = 只有内置默认根（home\AppData），不写进配置
+    "roots": [],
 }
 
 SEG_RE = re.compile(r"^[a-z0-9][a-z0-9 _\-.]{0,63}$")
@@ -218,6 +222,13 @@ def validate(raw):
     # 硬错误、只取合法子集，保证服务永不因坏配置起不来。
     errors.extend(rule_errors)
     cfg["rules"] = rules_out
+
+    # 1.9 根注册表：坏根降级为警告（丢弃该项但整体仍可保存）。
+    # 理由：登记根可能指向临时不可用的目录，不能因此让整个设置页保存失败。
+    roots_out, root_errors = roots_mod.validate_list(
+        raw.get("roots", DEFAULTS["roots"]), os.path.expanduser("~"))
+    warnings.extend("扫描根配置 %s，已忽略" % e for e in root_errors)
+    cfg["roots"] = roots_out
     return cfg, errors, warnings
 
 

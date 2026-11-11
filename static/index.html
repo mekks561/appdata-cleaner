@@ -11,7 +11,7 @@
 
   <header>
     <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
-      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.8.0</button>
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.9.0</button>
     </div>
     <div class="spacer"></div>
     <div class="netinfo" id="netinfo"></div>
@@ -26,7 +26,11 @@
   <div class="panel controls">
     <div class="field">
       <label>扫描目录</label>
-      <input class="path-input" id="root" value="">
+      <div style="display:flex;gap:6px">
+        <input class="path-input" id="root" list="rootList" value="" style="flex:1;min-width:0">
+        <button class="btn ghost" id="btnRoots" type="button" title="管理常用扫描根目录（最多 8 个）">管理</button>
+      </div>
+      <datalist id="rootList"></datalist>
     </div>
     <div class="field">
       <label>展开层数</label>
@@ -478,6 +482,29 @@
       <div style="margin-top:14px;font-size:12px;color:var(--muted);line-height:1.7" id="guideDisclaimer"></div>
     </div>
     <footer><button class="btn" data-close="maskGuide">关闭</button></footer>
+  </div>
+</div>
+
+<div class="mask" id="maskRoots">
+  <div class="modal" style="max-width:660px">
+    <header><h2>常用扫描根目录</h2><button class="close" data-close="maskRoots">×</button></header>
+    <div class="body">
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:10px">
+        登记常用目录后可直接在下拉里一键切换。所有根目录必须位于当前用户目录内
+        （<span id="rootsHome"></span>），最多 8 个；内置默认根不可删除。
+        登记只是快捷方式，<b>不会放宽任何扫描与删除的安全校验</b>。
+      </div>
+      <div id="rootsList" style="max-height:260px;overflow:auto;margin-bottom:14px"></div>
+      <div class="field"><label>添加根目录（绝对路径）</label>
+        <input class="txt" id="newRootPath" placeholder="C:\Users\…\Downloads" autocomplete="off"></div>
+      <div class="field"><label>显示名称（可选，最多 32 字）</label>
+        <input class="txt" id="newRootLabel" placeholder="下载目录" autocomplete="off" maxlength="32"></div>
+      <div id="rootsMsg" style="font-size:12.5px;color:var(--muted);min-height:18px"></div>
+    </div>
+    <footer>
+      <button class="btn" data-close="maskRoots">关闭</button>
+      <button class="btn primary" id="btnRootsAdd">添加</button>
+    </footer>
   </div>
 </div>
 
