@@ -11,7 +11,7 @@
 
   <header>
     <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
-      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.7.0</button>
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.8.0</button>
     </div>
     <div class="spacer"></div>
     <div class="netinfo" id="netinfo"></div>
@@ -460,6 +460,24 @@
       <button class="btn" data-close="maskDup">取消</button>
       <button class="btn danger" id="btnDoDup" disabled>确认清理</button>
     </footer>
+  </div>
+</div>
+
+<div class="mask" id="maskGuide">
+  <div class="modal" style="max-width:640px">
+    <header><h2>解锁引导 · 系统与程序数据</h2><button class="close" data-close="maskGuide">×</button></header>
+    <div class="body">
+      <div class="warnbox" id="guideNote" style="display:none"></div>
+      <div style="font-size:13px;color:var(--muted);margin:4px 0 10px">
+        该项属于<b>系统 / 程序数据</b>，本工具默认禁止删除以防误伤。
+        如确需处理，请按以下官方推荐步骤自行调整 Windows 权限：
+      </div>
+      <ol id="guideSteps" style="margin:0 0 14px;padding-left:22px;font-size:13px;line-height:1.9"></ol>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">官方说明页</div>
+      <div id="guideLinks" style="display:flex;flex-direction:column;gap:8px"></div>
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);line-height:1.7" id="guideDisclaimer"></div>
+    </div>
+    <footer><button class="btn" data-close="maskGuide">关闭</button></footer>
   </div>
 </div>
 

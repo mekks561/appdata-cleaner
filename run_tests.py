@@ -18,9 +18,9 @@ APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
 from tests import (test_api, test_auto, test_cli, test_config, test_diff,  # noqa: E402
-                   test_dup, test_ext, test_flow, test_gate, test_increment,
-                   test_m1, test_m3, test_parallel, test_rulepkg, test_rules,
-                   test_warn)
+                   test_dup, test_ext, test_flow, test_gate, test_guide,
+                   test_increment, test_m1, test_m3, test_parallel,
+                   test_rulepkg, test_rules, test_warn)
 from tests.common import BASE  # noqa: E402
 
 
@@ -57,6 +57,7 @@ def main():
     try:
         results.append(test_rules.run())
         results.append(test_rulepkg.run())    # 1.7 规则包：单元 + API，快照后恢复配置
+        results.append(test_guide.run())      # 1.8 解锁引导：只读端点 + 零执行面断言
         results.append(test_config.run())
         results.append(test_api.run())
         results.append(test_flow.run())

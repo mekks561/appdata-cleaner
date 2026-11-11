@@ -22,10 +22,10 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.7.0"
-BUILD = "2026-11-09"
+APP_VERSION = "1.8.0"
+BUILD = "2026-11-11"
 
-from core import actions, config, dupfind, history, rulepkg, rules, scan  # noqa: E402
+from core import actions, config, dupfind, guide, history, rulepkg, rules, scan  # noqa: E402
 from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
@@ -494,6 +494,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_auto_check()
         if u.path == "/api/restart-admin":
             return self._post_restart_admin()
+        if u.path == "/api/unlock-guide":
+            return self._post_unlock_guide(body)
         if u.path == "/api/dup/scan":
             return self._post_dup_scan(body)
         if u.path == "/api/dup/clean":
@@ -509,6 +511,11 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"error": "not found"}, 404)
 
     # ---------- 路由实现 ----------
+    def _post_unlock_guide(self, body):
+        """解锁引导（v1.8）：只下发说明与官方链接，零 IO、零执行（PLAN-1.8 §4）。"""
+        st, out = guide.build_guide(body.get("path"))
+        return self._json(out, st)
+
     def _post_scan(self, body):
         if STATE.running():
             return self._json({"error": "扫描进行中，请稍候"}, 409)

@@ -501,7 +501,7 @@ function renderTable(){
       <td><div class="bar"><i class="${info.cls}" style="width:${pct}%"></i></div></td>
       <td><span class="tag ${info.cls}"${noteTitle}>${info.text}</span></td>
       <td class="num">${r.f !== undefined && r.f !== null ? r.f.toLocaleString() : "—"}</td>
-      <td><button class="btn ghost" data-open="${esc(r.p)}">位置</button></td>
+      <td><button class="btn ghost" data-open="${esc(r.p)}">位置</button>${del ? "" : `<button class="btn ghost" data-guide="${esc(r.p)}" title="查看该目录的解锁引导与官方说明">引导</button>`}</td>
     </tr>`;
   }).join("");
 }
@@ -615,7 +615,7 @@ async function openPreview(){
       </div>`;
     }).join("") || '<div class="lrow">无有效项目</div>';
     $("#pvWarn").innerHTML = r.blockedCount
-      ? `清单中有 <b>${r.blockedCount}</b> 项属于系统/程序数据（已标红），执行时会被自动跳过。<br>请确认其余项目确实可以清理：绿色为已知安全缓存，黄色为疑似缓存，请对照说明再决定。`
+      ? `清单中有 <b>${r.blockedCount}</b> 项属于系统/程序数据（已标红），执行时会被自动跳过。<br>请确认其余项目确实可以清理：绿色为已知安全缓存，黄色为疑似缓存，请对照说明再决定。<br><a href="#" data-guide="" style="color:var(--accent)">查看解锁引导 →</a>`
       : `请逐项核对路径与用途说明。清理缓存后，对应程序首次启动会变慢或需要重新登录，属于正常现象。`;
     $("#cf1").checked = false; $("#cf2").checked = false;
     $("#permaText").value = "";
@@ -1287,6 +1287,26 @@ function openAbout(){
 /* ---------- 事件 ---------- */
 function closeMask(id){ $("#" + id).classList.remove("on"); }
 
+/* ---------- 解锁引导（v1.8）---------- */
+async function openGuide(path){
+  try {
+    const g = await api("/api/unlock-guide", path ? { path } : {});
+    const note = $("#guideNote");
+    if (g.protected){
+      note.style.display = "";
+      note.innerHTML = `<b>命中规则：</b>${esc(g.rule || "")}${g.vendor ? "（" + esc(g.vendor) + "）" : ""}<br>${esc(g.note || "")}`;
+    } else {
+      note.style.display = "none";
+    }
+    $("#guideSteps").innerHTML = (g.steps || []).map(s => `<li>${esc(s)}</li>`).join("");
+    $("#guideLinks").innerHTML = (g.links || []).map(l =>
+      `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" class="btn ghost" style="text-align:left">${esc(l.title)}</a>`
+    ).join("");
+    $("#guideDisclaimer").textContent = g.disclaimer || "";
+    $("#maskGuide").classList.add("on");
+  } catch(e){ toast("获取引导失败：" + e.message); }
+}
+
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-close]");
   if (t) closeMask(t.dataset.close);
@@ -1296,6 +1316,13 @@ document.addEventListener("click", e => {
 
   const open = e.target.closest("[data-open]");
   if (open){ e.stopPropagation(); api("/api/open", { path: open.dataset.open }).catch(err => toast(err.message)); return; }
+
+  const guideBtn = e.target.closest("[data-guide]");
+  if (guideBtn){
+    e.preventDefault(); e.stopPropagation();
+    openGuide(guideBtn.dataset.guide || null);
+    return;
+  }
 
   const undo = e.target.closest("[data-undo]");
   if (undo){ e.stopPropagation(); undoMove(undo.dataset.undo); return; }

@@ -1,5 +1,28 @@
 # 更新记录
 
+## 1.8.0 — 2026-11-11（「申请解锁」引导）
+
+- **protected 项解锁引导**：系统/程序数据行新增**「引导」按钮**，
+  清理预览的被拦截提示处新增**「查看解锁引导」**入口。弹窗内容：
+  为何被保护（命中规则 + 说明）、Windows 权限调整的官方推荐步骤
+  （属性 → 安全 → 高级 → 所有者）、**一键打开微软官方说明页**
+  （support.microsoft.com KB308421 / learn.microsoft.com takeown / icacls）。
+- **新端点 `POST /api/unlock-guide`**：服务端用 `classify()` 复核 path 确为
+  protected 才返回规则说明；省略 path 返回通用引导。path 仅做字符串规则匹配，
+  **零文件系统探测、零命令执行**——引导恰恰面向「可能没有读取权限」的路径。
+- **铁律**：本版不提供任何解锁/删除能力本身——不执行 takeown/icacls、
+  不修改文件 ACL、不新增任何写路径，只做「解释 + 跳转官方文档」。
+  官方链接白名单硬编码于 `core/guide.py`，前端只渲染后端返回的 URL
+  （`target="_blank" rel="noopener noreferrer"`），不自行拼接。
+- **新模块 `core/guide.py`**：步骤 / 链接 / 免责声明单点下发
+  （延续「前端不保存逻辑」）；测试含零执行面静态断言
+  （无 subprocess / os.system / shutil / open / stat / eval / ctypes）。
+- 测试：新增 `tests/test_guide.py` 36 项（单元复核矩阵 + API 端到端 +
+  零执行面），全量 **17 组 643 项全绿**；顺手清理 `core/rulepkg.py`
+  未用导入（ruff F401，1.7 遗留）。
+- 已知限制：无 ms-settings 深链（文件 ACL 无对应系统设置页，以官方文档页为准）；
+  引导步骤为 Win10/11 NTFS 通用版本，未按 Windows 版本分支。
+
 ## 1.7.0 — 2026-11-11（规则库导入/导出）
 
 - **导出规则包**：设置页新增「导出规则包」，`GET /api/rules/export` 直接下载
