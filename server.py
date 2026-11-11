@@ -22,10 +22,10 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 BUILD = "2026-11-09"
 
-from core import actions, config, dupfind, history, rules, scan  # noqa: E402
+from core import actions, config, dupfind, history, rulepkg, rules, scan  # noqa: E402
 from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
@@ -440,6 +440,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/config":
             return self._json({"config": CFG, "path": CFG_PATH,
                                "customRules": rules.user_rule_count()})
+        if u.path == "/api/rules/export":
+            return self._get_rules_export()
         return self._json({"error": "not found"}, 404)
 
     # ---------- POST ----------
@@ -482,6 +484,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._post_trash_empty(body)
         if u.path == "/api/config":
             return self._post_config(body)
+        if u.path == "/api/rules/import":
+            return self._post_rules_import(body)
         if u.path == "/api/oneclick/preview":
             return self._post_oneclick_preview()
         if u.path == "/api/oneclick":
@@ -631,6 +635,54 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "config": CFG,
                            "customRules": n, "warnings": warnings,
                            "restartHint": restart_hint})
+
+    # ---- 规则包导入/导出（1.7 R1）----
+    def _get_rules_export(self):
+        """导出当前自定义规则为规则包（浏览器直接下载 JSON 文件）。"""
+        pkg = rulepkg.build_package(CFG.get("rules") or [], APP_VERSION,
+                                    time.strftime("%Y-%m-%dT%H:%M:%S"))
+        raw = json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Content-Disposition", "attachment; filename=\"%s\""
+                         % time.strftime("appdata-cleaner-rules-%Y%m%d.json"))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        try:
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _post_rules_import(self, body):
+        """导入规则包：整体替换自定义规则（见 PLAN-1.7 §3 决策 1）。
+
+        顺序保证安全：包校验（含逐条 _validate_rules）→ config.save（自动
+        .bak 备份）→ 前缀树原子重建。整包格式错时什么都不动。
+        """
+        global CFG, CFG_WARNINGS
+        valid, errors, warnings = rulepkg.validate_package(body)
+        if errors:
+            return self._json({"error": "规则包导入失败", "details": errors}, 400)
+        cfg = dict(CFG)
+        cfg["rules"] = valid
+        cfg, save_errors, cfg_warnings = config.validate(cfg)
+        if save_errors:
+            # 理论上不可达（rules 已单点校验过），防御性兜底：绝不让坏配置落盘
+            return self._json({"error": "规则包导入失败", "details": save_errors}, 400)
+        err = config.save(APP_DIR, cfg)
+        if err:
+            return self._json({"error": err}, 500)
+        try:
+            n = rules.apply_user_rules(cfg["rules"])
+        except Exception as ex:
+            return self._json({"error": "自定义规则应用失败：%s" % ex}, 500)
+        CFG = cfg
+        CFG_WARNINGS = cfg_warnings
+        dropped = len(body.get("rules") or []) - len(valid)
+        return self._json({"ok": True, "applied": len(valid), "dropped": max(0, dropped),
+                           "warnings": warnings, "customRules": n})
 
     # ---- 一键清理（R2）+ 自动清理（V4-R1）共用单点 ----
     def _collect_safe_items(self):

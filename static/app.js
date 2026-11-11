@@ -1456,6 +1456,43 @@ $("#btnOneClick").addEventListener("click", openOneClick);
 $("#btnDoOneClick").addEventListener("click", doOneClick);
 $("#btnCfgSave").addEventListener("click", saveConfig);
 $("#btnCfgReload").addEventListener("click", () => loadConfig().catch(e => toast(e.message)));
+
+/* ---------- 规则包导入（1.7）：导出是 <a download> 直链，无需 JS ---------- */
+$("#btnRulesImport").addEventListener("click", () => $("#rulesFile").click());
+$("#rulesFile").addEventListener("change", async e => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";                       // 允许重复选择同一文件
+  if (!file) return;
+  const msg = $("#cfgMsg");
+  if (file.size > 64 * 1024){
+    msg.innerHTML = `<span style="color:var(--danger)">规则包超过 64 KB，不像本工具导出的文件</span>`;
+    return;
+  }
+  let pkg;
+  try { pkg = JSON.parse(await file.text()); }
+  catch(_){
+    msg.innerHTML = `<span style="color:var(--danger)">不是有效的 JSON 文件</span>`;
+    return;
+  }
+  if (!window.confirm(`导入将「替换」当前全部自定义规则（文件内 ${Array.isArray(pkg.rules) ? pkg.rules.length : "?"} 条）。继续？`))
+    return;
+  const btn = $("#btnRulesImport");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/rules/import", pkg);
+    await loadConfig();                      // 重新拉取配置刷新 textarea 与计数
+    const warn = (r.warnings && r.warnings.length)
+      ? `<br><span style="color:var(--warn)">丢弃 ${r.dropped} 条：</span>` + r.warnings.map(esc).join("<br>")
+      : "";
+    msg.innerHTML = `<span style="color:var(--ok)">已导入 ${r.applied} 条规则</span>` + warn;
+    toast("规则包已导入");
+  } catch(err){
+    msg.innerHTML = `<span style="color:var(--danger)">${esc(err.message)}</span>` +
+      (err.details && err.details.length ? `<br>${err.details.map(esc).join("<br>")}` : "");
+  } finally {
+    btn.disabled = false;
+  }
+});
 $("#btnAutoPreview").addEventListener("click", previewAutoScope);
 
 /* ---------- 以管理员身份重启 ---------- */

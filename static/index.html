@@ -11,7 +11,7 @@
 
   <header>
     <div class="brand"><span class="logo">C</span>AppData 磁盘清理助手
-      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.6.0</button>
+      <button class="ver" id="verBtn" title="查看版本与运行环境">v1.7.0</button>
     </div>
     <div class="spacer"></div>
     <div class="netinfo" id="netinfo"></div>
@@ -246,9 +246,15 @@
             约束：用户 protected 优先级最高；<b>safe 无法把系统保护目录改成可删</b>（内置 protected 永远赢）；最多 64 条、每条最多 8 段。
           </div>
           <textarea class="txt" id="cfgRules" rows="7" spellcheck="false" style="font-family:Consolas,monospace;font-size:12.5px;max-width:720px"></textarea>
-          <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+          <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">
             <button class="btn" id="btnCfgReload">放弃修改</button>
             <button class="btn primary" id="btnCfgSave">保存设置</button>
+            <span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>
+            <a class="btn ghost" id="btnRulesExport" href="/api/rules/export" download
+               title="把当前自定义规则下载为一个 JSON 规则包文件">导出规则包</a>
+            <button class="btn ghost" id="btnRulesImport" type="button"
+                    title="从规则包文件恢复规则（将替换当前全部自定义规则）">导入规则包</button>
+            <input type="file" id="rulesFile" accept=".json,application/json" style="display:none">
             <span id="cfgMsg" style="font-size:12.5px;color:var(--muted)"></span>
           </div>
         </div>
