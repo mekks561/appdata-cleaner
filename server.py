@@ -22,8 +22,8 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "1.9.0"
-BUILD = "2026-11-11"
+APP_VERSION = "2.0.0"
+BUILD = "2026-11-12"
 
 from core import actions, config, dupfind, guide, history, rulepkg, rules, scan  # noqa: E402
 from core import roots as roots_mod  # noqa: E402  —— 1.9 多根校验单点
