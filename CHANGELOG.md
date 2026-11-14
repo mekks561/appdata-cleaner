@@ -1,5 +1,17 @@
 # 更新记录
 
+## 2.1.1 — 2026-11-14（工程化与验证收口：pytest / 覆盖率 / CI，接口容错）
+
+本版不改任何清理语义与安全不变量，只把「验证」变成可重复、可门禁的流程，并补上接口对畸形输入的容错。
+
+- **测试可重复**：修复只读测试数据导致 `run_tests.py` 只能从干净目录跑一次的问题（先递归清只读再删除，删不掉就报错而非静默跳过）。
+- **pytest 入口**：`qa/` 用会话级夹具复现 `run_tests.py` 的 21 组断言、顺序一致；新增 `test_group_order_matches_run_tests` 防止两边注册漂移。
+- **接口契约**：新增 `tests/test_contract.py`（9 个可安全触发校验路径的端点 × 5 种畸形 body + 9 条类型非法用例）：不许断连、必须返回 JSON、错误可读、事后服务仍健康。
+- **接口容错**：`do_POST` 增加统一兜底（异常 → JSON 500，不再直接断连）；非对象 JSON 按空对象处理；`/api/scan` 的 `maxDepth/hotMB/bigMB/root`、`/api/list` 的 `path`、`/api/preview` 的 `paths` 补齐类型与范围校验（400 + 可读文案）。
+- **工程化**：`pyproject.toml`（Ruff/pytest/coverage）+ `requirements-build.txt` / `requirements-dev.txt` 版本锁定 + pre-commit 钩子；`build_exe.bat` 改用锁定依赖单条安装。
+- **覆盖率门槛**：`core/` + `server.py` 实测 77%（core 约 78%、server 74%），`fail_under = 75` 作为棘轮。
+- **CI**：`.github/workflows/gate.yml` 在 windows-latest 上跑 Ruff → pytest + 覆盖率 → 构建 exe → `release_gate.py --no-regression`。
+
 ## 2.1.0 — 2026-11-13（界面窗口化：默认桌面窗口，不再开浏览器）
 
 应需求「界面固化到 EXE、不打算开网页」：把现有 `static/` 界面套进 **pywebview 原生窗口**（Windows 自带 WebView2 Runtime 渲染），HTTP 服务移入后台线程，窗口关闭即停服务。核心逻辑、全部 API 契约、CLI 参数/退出码、G1–G6 安全不变量与删除路径**零改动**。

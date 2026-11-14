@@ -1,8 +1,8 @@
-# AppData 磁盘清理助手 v2.1.0
+# AppData 磁盘清理助手 v2.1.1
 
 查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 实现，**运行无需联网、无需 Node**。核心逻辑仅用标准库；v2.1 起的桌面窗口壳额外使用 `pywebview`（依赖 Windows 自带的 WebView2 运行时，Win10/11 默认自带），无 WebView2 时自动退回浏览器模式。
 
-> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（本版）**：默认桌面窗口不再开浏览器。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.1.md`。
+> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（已发布）**：默认桌面窗口不再开浏览器 → **2.1.1 工程化与验证收口（本版）**：pytest / 覆盖率门槛 / CI 门禁与接口容错。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.1.md`。
 
 ## 环境要求
 
@@ -136,6 +136,7 @@ python run_tests.py
 - `tests/test_rulepkg.py` —— 规则包导入/导出（包校验矩阵、G1 提权专项、导入替换与持久化、坏包拒绝、往返一致）
 - `tests/test_config.py` —— 配置校验（非法规则硬拒绝、启动容错、自定义规则优先级）
 - `tests/test_api.py` —— 接口与安全（跨站、越界、令牌重放、目标目录、截断字段、版本贯通）
+- `tests/test_contract.py` —— 接口契约（非 JSON、非对象 body、类型非法：不断连、返回 JSON、错误可读）
 - `tests/test_flow.py` —— 端到端（扫描 → 回收站 → 移动 → 撤销 → 永久删除 → 只读文件 → 保护目录）
 - `tests/test_increment.py` —— 增量（冷目录复用、深层新增检出、快照落盘、fresh 强制全量）
 - `tests/test_m3.py` —— 历史与撤销（manifest、路径穿越拒绝、undo 回滚、清空回收站守门）
@@ -153,6 +154,21 @@ python run_tests.py
 - `tests/test_release_gate.py` —— 发版门禁可靠性（骨架破坏必被拦下、检查器纯函数、AST 零删除面、防递归约束）
 
 退出码 0 表示全绿。测试会重建 `testdata/`，跑完即可删。
+
+也可以用 pytest 跑同一批断言（一个组 = 一个 test case，服务由会话夹具统一拉起，顺序与 `run_tests.py` 一致）：
+
+```bash
+python -m pytest
+```
+
+覆盖率（PowerShell；只统计 `core/` 与 `server.py`，门槛见 `pyproject.toml` 的 `fail_under`）：
+
+```powershell
+$env:AC_COVERAGE="1"
+python -m coverage run --parallel-mode -m pytest
+python -m coverage combine
+python -m coverage report
+```
 
 ## 发版门禁（v2.0 新增）
 
@@ -229,6 +245,7 @@ requirements-build.txt 构建期依赖版本锁定（不进入运行时）
 pyproject.toml         Ruff 配置与项目元数据（版本真值仍只在 server.py）
 .pre-commit-config.yaml 提交前 Ruff 检查与格式化钩子（可选，本地执行 pre-commit install 启用）
 run_tests.py           一键跑全部分组（自动拉起临时服务）
+qa/                    pytest 驱动层（复用 tests/ 断言组，含覆盖率启动器）
 cli.py                 命令行入口（薄参数层，不含任何删除调用）
 release_gate.py        发版门禁（发版期工具，不进 exe、不改运行时）
 tests/                 测试
