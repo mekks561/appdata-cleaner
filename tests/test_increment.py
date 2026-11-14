@@ -48,14 +48,11 @@ def run():
     c.ok("全量扫描有结果", res1["fileCount"] > 0, res1["fileCount"])
     c.eq("全量不产生复用", res1["incremental"]["reusedDirs"], 0)
 
-    snaps = (
-        [n for n in os.listdir(CACHE_DIR) if n.startswith("snapshot-")]
-        if os.path.isdir(CACHE_DIR)
-        else []
-    )
-    c.ok("快照已写入 cache/", len(snaps) >= 1, snaps)
-    if snaps:
-        with open(os.path.join(CACHE_DIR, snaps[0]), "r", encoding="utf-8") as f:
+    # 精确取本次根的快照：cache/ 里可能还有子根（roots_sandbox 等）的旧快照
+    snap_path = snapshot.path_for(CACHE_DIR, ROOT)
+    c.ok("快照已写入 cache/", os.path.isfile(snap_path), os.path.basename(snap_path))
+    if os.path.isfile(snap_path):
+        with open(snap_path, "r", encoding="utf-8") as f:
             snap = json.load(f)
         c.ok("快照带 maxDepth/createdAt", "maxDepth" in snap and "createdAt" in snap, list(snap))
         kids = snap["tree"].get("kids") or []

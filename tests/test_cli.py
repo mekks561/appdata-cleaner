@@ -19,9 +19,9 @@ sys.path.insert(0, APP)
 
 import cli  # noqa: E402
 from core import history  # noqa: E402
-from tests.common import MB, Checker  # noqa: E402
+from tests.common import MB, SANDBOX, Checker  # noqa: E402
 
-TMP_ROOT = os.path.join(APP, "testdata", "_cli")
+TMP_ROOT = os.path.join(SANDBOX, "testdata", "_cli")
 _SERVER = None
 
 

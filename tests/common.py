@@ -11,7 +11,24 @@ import urllib.request
 
 BASE = os.environ.get("TEST_BASE", "http://127.0.0.1:8765")
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOT = os.path.join(APP, "testdata")
+
+
+def _sandbox():
+    """测试用的落盘根目录。
+
+    `POST /api/scan` 与 `core.roots` 只接受当前用户目录内的路径；
+    项目本身若不在用户目录下（如 GitHub Actions 的 workspace 在 `D:\\a\\...`），
+    测试数据就得搬到用户目录里，否则扫描与根目录校验会被合法地拒绝。
+    """
+    home = os.path.normcase(os.path.abspath(os.path.expanduser("~")))
+    app = os.path.normcase(APP)
+    if app == home or app.startswith(home + os.sep):
+        return APP
+    return os.path.join(os.path.expanduser("~"), ".appdata-cleaner-qa")
+
+
+SANDBOX = _sandbox()
+ROOT = os.path.join(SANDBOX, "testdata")
 MB = 1024 * 1024
 
 

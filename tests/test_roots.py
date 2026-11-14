@@ -18,14 +18,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import config  # noqa: E402
 from core import roots as roots_mod
-from tests.common import APP, Checker, get, post  # noqa: E402
+from tests.common import SANDBOX, Checker, get, post  # noqa: E402
 
 HOME = os.path.expanduser("~")
 DEFAULT = roots_mod.default_root(HOME)
+SANDBOX_ROOTS = os.path.join(SANDBOX, "testdata", "roots_sandbox")
 
 
 def _mk(name):
-    d = os.path.join(APP, "testdata", "roots_sandbox", name)
+    d = os.path.join(SANDBOX_ROOTS, name)
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -44,12 +45,12 @@ def test_unit(c):
         ("相对路径", "relative/dir"),
         ("盘符根", "C:\\"),
         ("UNC", "\\\\server\\share"),
-        ("穿越段", os.path.join(APP, "..", "evil")),
+        ("穿越段", os.path.join(SANDBOX, "..", "evil")),
         ("home 外的系统目录", "C:\\Windows\\System32"),
         ("home 自身", HOME),
-        ("不存在的目录", os.path.join(APP, "no_such_dir_9f3a")),
-        ("系统保护段（home 内）", os.path.join(APP, "windows", "foo")),
-        ("超长路径", os.path.join(APP, "x" * 600)),
+        ("不存在的目录", os.path.join(SANDBOX, "no_such_dir_9f3a")),
+        ("系统保护段（home 内）", os.path.join(SANDBOX, "windows", "foo")),
+        ("超长路径", os.path.join(SANDBOX, "x" * 600)),
     ]
     for label, p in bad:
         r, err = roots_mod.validate_item(p, HOME, [DEFAULT])
@@ -72,6 +73,7 @@ def test_unit(c):
     sub = _mk("Alpha/sub")
     _, err = roots_mod.validate_item(sub, HOME, [DEFAULT, good])
     c.ok("子目录（嵌套）被拒", "重复或相互嵌套" in (err or ""), err)
+    os.makedirs(DEFAULT, exist_ok=True)  # 校验先看存在性，默认根得真实存在
     _, err = roots_mod.validate_item(DEFAULT, HOME, [DEFAULT])
     c.ok("默认根占位（嵌套）被拒", "重复或相互嵌套" in (err or ""), err)
 
@@ -128,7 +130,7 @@ def test_api(c):
         c.eq("嵌套 add → 400", st, 400)
         st, r = post("/api/roots/add", {"path": "C:\\"})
         c.eq("盘符根 add → 400", st, 400)
-        st, r = post("/api/roots/add", {"path": os.path.join(APP, "not_exist_77")})
+        st, r = post("/api/roots/add", {"path": os.path.join(SANDBOX, "not_exist_77")})
         c.eq("不存在 add → 400", st, 400)
         st, r = post("/api/roots/add", {"path": DEFAULT})
         c.eq("默认根 add → 400（嵌套）", st, 400)
@@ -170,7 +172,7 @@ def test_api(c):
         post("/api/config", dict(orig, roots=orig_roots))
         import shutil
 
-        shutil.rmtree(os.path.join(APP, "testdata", "roots_sandbox"), ignore_errors=True)
+        shutil.rmtree(SANDBOX_ROOTS, ignore_errors=True)
     _st, fin = get("/api/config")
     c.eq("配置快照还原", fin["config"]["roots"], orig_roots)
 
