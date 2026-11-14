@@ -1,8 +1,8 @@
-# AppData 磁盘清理助手 v2.1.1
+# AppData 磁盘清理助手 v2.2.0
 
 查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 实现，**运行无需联网、无需 Node**。核心逻辑仅用标准库；v2.1 起的桌面窗口壳额外使用 `pywebview`（依赖 Windows 自带的 WebView2 运行时，Win10/11 默认自带），无 WebView2 时自动退回浏览器模式。
 
-> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（已发布）**：默认桌面窗口不再开浏览器 → **2.1.1 工程化与验证收口（本版）**：pytest / 覆盖率门槛 / CI 门禁与接口容错。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.1.md`。
+> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（已发布）**：默认桌面窗口不再开浏览器 → 2.1.1 工程化与验证收口（已发布）：pytest / 覆盖率门槛 / CI 门禁与接口容错 → **2.2.0 发版与运行时可交付（本版）**：Inno Setup 安装包 + 产物 SHA256 清单 + 门禁 C7。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.2.md`。
 
 ## 环境要求
 
@@ -11,6 +11,7 @@
 | Python | **3.9 或更高**（低于 3.9 会直接提示退出） |
 | 系统 | Windows 10 / 11（依赖系统回收站 Shell API） |
 | 依赖 | 无。`pip install` 一步都不需要 |
+| 安装包构建（可选） | Inno Setup 6（仅 `build_installer.bat` 需要，不进入运行期） |
 
 ## 使用
 
@@ -28,6 +29,16 @@ build_exe.bat        （一键构建；构建依赖版本锁定在 requirements-
 ```
 
 产物 `dist\AppDataCleaner.exe` 双击即用；`config.json`/`logs`/`cache` 自动生成在 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
+
+也可以打成 **Inno Setup 6 安装包**（v2.2 新增；仅构建安装包时需要，不影响 exe 运行）：
+
+```
+build_installer.bat   （需先跑 build_exe.bat，并安装 Inno Setup 6：https://jrsoftware.org/isdl.php）
+```
+
+产物 `dist\AppDataCleaner-Setup-<版本>.exe` 安装到 `%LOCALAPPDATA%\Programs\AppDataCleaner`（当前用户权限，不写 Program Files、不注册服务），带开始菜单快捷方式与可选桌面图标；卸载**默认保留** `config.json` 与 `logs/`，在卸载弹窗里选「是」才一并删除。安装包**未做代码签名**，首次运行可能触发 SmartScreen 提示。
+
+每次构建（exe 或安装包）都会生成 `dist\release.json`：记录各产物的文件名、大小与 SHA256；`python tools\release_manifest.py --verify` 可一键核对下载到的文件是否与发版时一致。
 
 **v2.1 起，双击直接弹桌面窗口（不再开浏览器）**：界面套在原生窗口里，关闭窗口即停止服务。若窗口启动失败（如老系统缺 WebView2 运行时）会自动退回浏览器模式；也可加 `--web` 参数强制走浏览器。服务启动后会**自动在后台预热扫描**，打开页面即有数据。
 
@@ -175,8 +186,9 @@ python -m coverage report
 `release_gate.py` 是**发版期唯一前置入口**：不进 exe、不改运行时行为、纯标准库。发版前跑一次：
 
 ```bash
-python release_gate.py                    # 完整门禁：C1–C6
+python release_gate.py                    # 完整门禁：C1–C7
 python release_gate.py --no-regression   # 跳过全量回归（快速静态核验）
+python release_gate.py --no-manifest     # 跳过 C7 发布清单（产物尚未构建时）
 python release_gate.py --self-test       # 门禁自检：构造被破坏的副本，验证能拦下
 ```
 
@@ -188,6 +200,7 @@ python release_gate.py --self-test       # 门禁自检：构造被破坏的副�
 | C4 文档同步 | 版本路线、功能编号连续、无写死的过期组数、PLAN/文件清单齐全 |
 | C5 双形态产物 | 源码形态与 onefile exe 形态的 `--version` 一致且零删除 |
 | C6 全量回归 | 调用 `run_tests.py`，退出码必须为 0 |
+| C7 发布清单 | `dist/release.json` 存在、版本等于 `APP_VERSION`、含主产物、逐项 SHA256 与大小一致 |
 
 任一 FAIL 即退出码 `1` 并禁止发版；通过时报告写入 `logs/gate_report.json` 留痕。门禁脚本自身零删除面（AST 级核验），只读取文件并调用既有测试/冒烟脚本。
 
@@ -241,6 +254,9 @@ static/index.html      页面结构
 static/style.css       样式
 static/app.js          交互逻辑（搜索、筛选、键盘、CSV 导出、设置页）
 build_exe.bat          PyInstaller onefile 构建（构建期依赖：PyInstaller + pywebview + pythonnet）
+build_installer.bat    Inno Setup 6 安装包构建（需先构建 exe；产出 dist\AppDataCleaner-Setup-<版本>.exe）
+installer/AppDataCleaner.iss  安装包脚本（当前用户权限安装、卸载默认保留配置与日志）
+tools/release_manifest.py     发版产物清单生成/校验（dist/release.json，纯标准库）
 requirements-build.txt 构建期依赖版本锁定（不进入运行时）
 pyproject.toml         Ruff 配置与项目元数据（版本真值仍只在 server.py）
 .pre-commit-config.yaml 提交前 Ruff 检查与格式化钩子（可选，本地执行 pre-commit install 启用）

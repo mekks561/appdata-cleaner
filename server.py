@@ -22,8 +22,8 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "2.1.1"
-BUILD = "2026-11-13"
+APP_VERSION = "2.2.0"
+BUILD = "2026-11-14"
 
 import cli  # noqa: E402  —— 1.6 命令行入口（顶层导入确保 PyInstaller 收进包）
 from core import (  # noqa: E402

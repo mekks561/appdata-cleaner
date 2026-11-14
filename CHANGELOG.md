@@ -1,5 +1,25 @@
 # 更新记录
 
+## 2.2.0 — 2026-11-14（发版与运行时可交付：安装包 + 产物清单 + 门禁 C7）
+
+本版不改清理语义、API 契约、CLI 参数与 G1–G6 安全不变量，只补「交付」环节。
+
+- **产物清单 `tools/release_manifest.py`（纯标准库）**：扫描 `dist/` 生成 `dist/release.json`
+  （`version` / `generatedAt` / 每个文件的 `name`、`size`、`sha256`）；`--verify` 校验清单与磁盘一致，
+  不一致退出码 `1`。清单只收录 `AppDataCleaner.exe` 与 `AppDataCleaner-Setup-<ver>.exe`。
+- **发版门禁 C7 发布清单**：`check_manifest(root)` 纯函数 —— 清单必须存在、`version` 等于
+  `APP_VERSION`、必须含 `AppDataCleaner.exe`、每个条目 SHA256 与大小一致，任一不符即阻断发版；
+  新增 `--no-manifest`（仅用于未构建产物的静态检查）。`--self-test` 破坏矩阵新增四类清单破坏。
+- **安装包**：新增 `installer/AppDataCleaner.iss`（Inno Setup 6）与 `build_installer.bat`；
+  安装到 `{localappdata}\Programs\AppDataCleaner`（当前用户权限，不写系统目录、不注册服务），
+  开始菜单快捷方式 + 可选桌面图标；卸载**默认保留** `config.json` 与 `logs/`，并询问是否一并删除。
+  版本号由 `build_installer.bat` 从 `server.py` 读取，不写第二份真值。
+- **构建/CI**：`build_exe.bat` 末尾自动生成 `dist/release.json`；CI 在构建 exe 后生成清单再跑门禁
+  （C7 生效）。CI **不安装 Inno Setup**，安装包仅本地/发版时构建。
+- **未验证项（如实披露）**：本机无 Inno Setup 6，`AppDataCleaner-Setup-2.2.0.exe` 未产出（脚本已给出
+  安装指引）；本机无 Nuitka，**未做任何 Nuitka A/B 对比**，留独立评估。
+- **发版形态**：exe + 安装包，**不做代码签名**（无证书），首次运行可能触发 SmartScreen 提示。
+
 ## 2.1.1 — 2026-11-14（工程化与验证收口：pytest / 覆盖率 / CI，接口容错）
 
 本版不改任何清理语义与安全不变量，只把「验证」变成可重复、可门禁的流程，并补上接口对畸形输入的容错。
