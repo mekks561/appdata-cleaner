@@ -40,5 +40,8 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --name AppDataCleaner --add-data "static;static" --exclude-module tests --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py
 
+      - name: 生成发版产物清单
+        run: python tools/release_manifest.py
+
       - name: 发版门禁（C6 回归已由 pytest 执行，这里跳过避免重复）
         run: python release_gate.py --no-regression
