@@ -1,0 +1,9 @@
+# 提交前门禁：Ruff 静态检查 + 格式化（配置与 pyproject.toml 共用）
+# 首次启用：python -m pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
