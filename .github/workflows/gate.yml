@@ -1,0 +1,41 @@
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt -r requirements-build.txt
+
+      - name: 静态检查
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
+      - name: 全量回归 + 覆盖率
+        run: |
+          $env:AC_COVERAGE = "1"
+          python -m coverage run --parallel-mode -m pytest
+          python -m coverage combine
+          python -m coverage report
+
+      - name: 构建 exe
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --name AppDataCleaner --add-data "static;static" --exclude-module tests --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py
+
+      - name: 发版门禁（C6 回归已由 pytest 执行，这里跳过避免重复）
+        run: python release_gate.py --no-regression
