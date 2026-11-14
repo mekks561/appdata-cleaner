@@ -542,4 +542,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # 非中文区域的 Windows 控制台（如 CI 上的 cp1252）直接打印中文会 UnicodeEncodeError
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())
