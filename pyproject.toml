@@ -8,7 +8,8 @@ dynamic = ["version"]
 [tool.ruff]
 target-version = "py39"
 line-length = 100
-extend-exclude = ["build", "dist", "testdata", ".ruff_cache"]
+# 文档里的 Python 片段是说明性样例，不参与格式化
+extend-exclude = ["build", "dist", "testdata", ".ruff_cache", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
