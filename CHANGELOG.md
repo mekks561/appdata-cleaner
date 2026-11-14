@@ -1,5 +1,17 @@
 # 更新记录
 
+## 2.1.0 — 2026-11-13（界面窗口化：默认桌面窗口，不再开浏览器）
+
+应需求「界面固化到 EXE、不打算开网页」：把现有 `static/` 界面套进 **pywebview 原生窗口**（Windows 自带 WebView2 Runtime 渲染），HTTP 服务移入后台线程，窗口关闭即停服务。核心逻辑、全部 API 契约、CLI 参数/退出码、G1–G6 安全不变量与删除路径**零改动**。
+
+- **启动方式**：双击 exe（或 `python server.py`）默认弹桌面窗口；`--web` 强制走浏览器（旧行为）；`--version` / `--scan` / `--dry-run` / `--oneclick` 等 CLI 动作完全不变。环境变量 `APP_NO_GUI=1` 强制无界面模式，供测试/无头场景使用。
+- **`core/gui.py`（桌面窗口薄壳）**：只做 `create_window + start` 与隐藏伴随控制台；**不 import core.actions、不执行命令、不写文件、零删除面**。`import webview` 延迟到 GUI 模式函数内，server 顶层保持纯标准库——CLI / 测试 / `--web` 路径完全不碰第三方代码。
+- **降级兜底**：无 WebView2 Runtime（老 Win7 等）或 pywebview 初始化失败时，自动退回浏览器模式并打印原因。
+- **单实例语义保持**：已有实例在跑时，第二次启动直接打开界面指向现有实例，不重复起服务；`--takeover` 顶替逻辑不变。关窗口 `finally` shutdown，无残留监听。
+- **新增依赖（有意修订「零依赖」承诺）**：运行时 `pywebview` + `pythonnet`；目标机需 WebView2 Runtime（Win10/11 默认自带）。构建脚本 `build_exe.bat` 已自动安装 pywebview 并加 `--collect-all` 三个包。
+- **测试**：新增 `tests/test_gui.py` 25 项（模式分派矩阵、gui 零删除面、server 延迟导入、`--web` 旧契约、CLI 优先）；全量 **20 组全绿**。
+- **明确不做**：窗口图标、窗口尺寸记忆、多窗口；跨盘根/按根分自动清理/多根并行仍冻结（2.1 前遗留候选，未做）。
+
 ## 2.0.0 — 2026-11-12（最终稳定收口版）
 
 **不加任何新功能**，只把发版流程与文档口径收口。`server.py` 仅改 `APP_VERSION` / `BUILD` 两个字面量，`core/` 与 `static/` 的行为代码一行未动；所有 API 契约、CLI 参数、退出码、config 字段与 G1–G6 安全不变量全部保持。此为路线最终发布目标（`latest`），之后只出 `2.0.x` 修订补丁。

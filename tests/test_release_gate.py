@@ -55,7 +55,7 @@ def test_real_repo(c):
 def test_pure(c):
     """检查器只读：调用前后被检文件内容不变。"""
     watched = ["server.py", "static/index.html", "README.md", "CHANGELOG.md",
-               "run_tests.py", "cli.py", "core/guide.py"]
+               "run_tests.py", "cli.py", "core/guide.py", "core/gui.py"]
     before = {p: _hash(p) for p in watched}
     for fn in (gate.check_version_sources, gate.check_gate_suite,
                gate.check_static_security, gate.check_docs):
@@ -148,6 +148,8 @@ def test_skeleton_breaks(c):
             ("CLI 注入删除 API", "cli.py", lambda s: s + "\nos.remove('x')\n",
              gate.check_static_security),
             ("引导模块注入命令执行", "core/guide.py", lambda s: s + "\nimport subprocess\n",
+             gate.check_static_security),
+            ("GUI 壳注入命令执行", "core/gui.py", lambda s: s + "\nimport subprocess\n",
              gate.check_static_security),
             ("README 写死过期组数", "README.md", lambda s: s + "\n跑 16 组 607 项。\n",
              gate.check_docs),

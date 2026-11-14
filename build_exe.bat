@@ -11,10 +11,19 @@ if errorlevel 1 (
   python -m pip install pyinstaller || goto :fail
 )
 
+python -m pip show pywebview >nul 2>&1
+if errorlevel 1 (
+  echo Installing pywebview (GUI window shell) ...
+  python -m pip install pywebview || goto :fail
+)
+
 python -m PyInstaller --noconfirm --clean --onefile ^
   --name AppDataCleaner ^
   --add-data "static;static" ^
   --exclude-module tests ^
+  --collect-all pythonnet ^
+  --collect-all webview ^
+  --collect-all clr_loader ^
   server.py || goto :fail
 
 echo.

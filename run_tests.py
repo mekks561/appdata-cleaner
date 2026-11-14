@@ -18,8 +18,8 @@ APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
 from tests import (test_api, test_auto, test_cli, test_config, test_diff,  # noqa: E402
-                   test_dup, test_ext, test_flow, test_gate, test_guide,
-                   test_increment, test_m1, test_m3, test_parallel,
+                   test_dup, test_ext, test_flow, test_gate, test_gui,
+                   test_guide, test_increment, test_m1, test_m3, test_parallel,
                    test_release_gate, test_rulepkg, test_roots, test_rules,
                    test_warn)
 from tests.common import BASE  # noqa: E402
@@ -39,8 +39,8 @@ def main():
     if info:
         print("复用已在运行的服务：v%s" % info.get("version"))
     else:
-        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_WARMUP="1",
-                   APP_NO_AUTOCLEAN="1", PYTHONUTF8="1")
+        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_GUI="1",
+                   APP_NO_WARMUP="1", APP_NO_AUTOCLEAN="1", PYTHONUTF8="1")
         proc = subprocess.Popen([sys.executable, "server.py"], cwd=APP, env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         for _ in range(60):
@@ -76,6 +76,8 @@ def main():
         results.append(test_diff.run())
         results.append(test_ext.run())
         results.append(test_cli.run())       # 1.6 CLI：不启服务，注入 server 模块直调
+        # 2.1 GUI 启动模式：纯函数 + 静态断言，不起服务不开窗口
+        results.append(test_gui.run())
         # 1.9 多根：会触发一次扫描，放最后避免结果树影响其他组
         results.append(test_roots.run())
         # 2.0 收口：门禁可靠性自检（不启服务、不调用完整门禁以免递归）

@@ -4,6 +4,7 @@
 import json
 import os
 import shutil
+import stat
 import time
 import urllib.error
 import urllib.request
@@ -37,10 +38,37 @@ def get(path, timeout=30):
         return e.code, {}
 
 
+def _rmtree_force(path):
+    """删除目录树：先递归清掉只读属性，再删。
+
+    Windows 上只读文件会让 shutil.rmtree 失败；旧实现用 ignore_errors=True
+    静默留下文件，下一轮 open(...,'wb') 直接 PermissionError —— 测试因此
+    只能从干净目录跑一次。这里显式清属性并复核，删不掉就报错而不是假装成功。
+    """
+    if not os.path.exists(path):
+        return
+
+    def onerror(func, p, exc_info):
+        try:
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+            func(p)
+        except OSError:
+            pass
+
+    for dp, _dns, fns in os.walk(path):
+        for n in fns:
+            try:
+                os.chmod(os.path.join(dp, n), stat.S_IWRITE | stat.S_IREAD)
+            except OSError:
+                pass
+    shutil.rmtree(path, onerror=onerror)
+    if os.path.isdir(path):
+        raise RuntimeError("测试目录清理失败：%s（仍有文件被占用或只读）" % path)
+
+
 def fresh_testdata():
-    """重建一份干净的测试目录，避免上轮清理把数据删光。"""
-    if os.path.isdir(ROOT):
-        shutil.rmtree(ROOT, ignore_errors=True)
+    """重建一份干净的测试目录，避免上轮清理把数据删光（可反复运行）。"""
+    _rmtree_force(ROOT)
     files = [
         ("Local/FakeApp/Cache/blob1.bin", 12),
         ("Local/FakeApp/Cache/blob2.bin", 8),

@@ -1,8 +1,8 @@
-# AppData 磁盘清理助手 v2.0.0
+# AppData 磁盘清理助手 v2.1.0
 
-查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 标准库实现，**无需安装任何依赖**，不需要 Node、不需要联网。
+查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 实现，**运行无需联网、无需 Node**。核心逻辑仅用标准库；v2.1 起的桌面窗口壳额外使用 `pywebview`（依赖 Windows 自带的 WebView2 运行时，Win10/11 默认自带），无 WebView2 时自动退回浏览器模式。
 
-> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录，五版均已发布 → **2.0.0 稳定收口版（本版）** 为最终发布目标，之后只出 `2.0.x` 修订补丁、不再新增功能。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.0.md`。
+> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（本版）**：默认桌面窗口不再开浏览器。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.1.md`。
 
 ## 环境要求
 
@@ -24,12 +24,12 @@
 也可以打包成**单文件 exe**（无需安装 Python 的机器也能跑）：
 
 ```
-build_exe.bat        （或命令行：python -m PyInstaller --onefile --name AppDataCleaner --add-data "static;static" server.py）
+build_exe.bat        （或命令行：python -m PyInstaller --onefile --name AppDataCleaner --add-data "static;static" --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py）
 ```
 
-产物 `dist\AppDataCleaner.exe` 约 9.5 MB，双击即用；`config.json`/`logs`/`cache` 自动生成在 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
+产物 `dist\AppDataCleaner.exe` 双击即用；`config.json`/`logs`/`cache` 自动生成在 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
 
-浏览器会自动打开 `http://127.0.0.1:8765`。服务启动后会**自动在后台预热扫描**，打开页面即有数据。
+**v2.1 起，双击直接弹桌面窗口（不再开浏览器）**：界面套在原生窗口里，关闭窗口即停止服务。若窗口启动失败（如老系统缺 WebView2 运行时）会自动退回浏览器模式；也可加 `--web` 参数强制走浏览器。服务启动后会**自动在后台预热扫描**，打开页面即有数据。
 
 1. 点「开始扫描」——第二次扫描走**增量**，通常不到 1 秒（需要精确值点「强制全量重扫」）
 2. 用顶部**搜索框**（支持 `*` 通配，`/` 聚焦、`Esc` 清空）和**筛选 chips** 缩小范围
@@ -50,7 +50,7 @@ build_exe.bat        （或命令行：python -m PyInstaller --onefile --name Ap
 
 ## 命令行模式（v1.6 新增）
 
-不带任何参数运行，仍是原来的本地网页版；带动作参数才进入 CLI（**不启服务、不开浏览器、不占端口**）：
+不带任何参数运行 = **桌面窗口版**（v2.1 起）；`--web` = 浏览器版；带动作参数才进入 CLI（**不启服务、不开界面、不占端口**）：
 
 ```bash
 python server.py --scan --fresh                 # 只扫描，输出摘要，不删除
@@ -61,7 +61,7 @@ AppDataCleaner.exe --scan --json              # exe 同样支持，单行 JSON �
 
 | 参数 | 说明 |
 |---|---|
-| `--scan` / `--dry-run` / `--oneclick` | 三选一、互斥；都不给 = 启动网页版服务 |
+| `--scan` / `--dry-run` / `--oneclick` | 三选一、互斥；都不给 = 桌面窗口版（`--web` 换浏览器版） |
 | `--yes` | **唯一能触发删除的开关**；`--oneclick` 不给它就只预览并以退出码 `4` 结束 |
 | `--root` | 扫描根目录，必须位于当前用户目录内（越界直接拒绝，退出码 `3`） |
 | `--max-depth` / `--fresh` / `--hot-mb` / `--big-mb` | 扫描参数，缺省同网页版 |
@@ -219,11 +219,12 @@ core/errors.py         错误码 → 人话
 core/rulepkg.py        JSON 规则包格式校验（复用 config 校验单点）
 core/roots.py          多根目录注册表校验单点
 core/guide.py          解锁引导说明与官方链接（零 IO、零执行）
+core/gui.py            桌面窗口薄壳（延迟导入 webview，零删除面）
 core/fsutil.py         长路径、越界判定、目录体积
 static/index.html      页面结构
 static/style.css       样式
 static/app.js          交互逻辑（搜索、筛选、键盘、CSV 导出、设置页）
-build_exe.bat          PyInstaller onefile 构建（构建期依赖，运行期零依赖）
+build_exe.bat          PyInstaller onefile 构建（构建期依赖：PyInstaller + pywebview + pythonnet）
 run_tests.py           一键跑全部分组（自动拉起临时服务）
 cli.py                 命令行入口（薄参数层，不含任何删除调用）
 release_gate.py        发版门禁（发版期工具，不进 exe、不改运行时）
@@ -240,4 +241,5 @@ PLAN-1.7.md            1.7 规则包导入/导出规划与实施偏差
 PLAN-1.8.md            1.8 解锁引导规划与实施偏差
 PLAN-1.9.md            1.9 多根目录规划与实施偏差
 PLAN-2.0.md            2.0 稳定收口版规划与实施偏差
+PLAN-2.1.md            2.1 界面窗口化规划与实施偏差
 ```

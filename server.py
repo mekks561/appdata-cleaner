@@ -22,10 +22,11 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "2.0.0"
-BUILD = "2026-11-12"
+APP_VERSION = "2.1.0"
+BUILD = "2026-11-13"
 
 from core import actions, config, dupfind, guide, history, rulepkg, rules, scan  # noqa: E402
+from core import gui as gui_mod  # noqa: E402  —— 2.1 桌面窗口薄壳（延迟导入 webview）
 from core import roots as roots_mod  # noqa: E402  —— 1.9 多根校验单点
 from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
@@ -985,6 +986,35 @@ def _shield_console():
             pass
 
 
+def _interface_mode(argv, env):
+    """启动界面模式分派（纯函数，便于测试）。
+
+    优先级：--web > APP_NO_GUI > 默认 GUI。
+    --version 与 CLI 动作在调用本函数之前已分流，不经过这里。
+    """
+    if "--web" in argv:
+        return "web"
+    if env.get("APP_NO_GUI"):
+        return "headless"
+    return "gui"
+
+
+def _open_interface(mode, url):
+    """按模式打开界面。GUI 失败自动降级浏览器；headless 什么都不做。"""
+    if mode == "gui":
+        try:
+            gui_mod.run(url, "%s v%s" % (APP_NAME, APP_VERSION))
+            return
+        except Exception as e:  # noqa: BLE001  —— 无 WebView2 时退回网页
+            print(" 桌面窗口启动失败（%s），退回浏览器模式。" % e)
+            mode = "web"
+    if mode == "web" and not os.environ.get("APP_NO_BROWSER"):
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+
 def main():
     _shield_console()
     os.makedirs(STATIC_DIR, exist_ok=True)
@@ -996,6 +1026,7 @@ def main():
     print(" %s  v%s  (build %s)" % (APP_NAME, APP_VERSION, BUILD))
     print(" 地址: %s" % url)
 
+    mode = _interface_mode(sys.argv[1:], os.environ)
     takeover = "--takeover" in sys.argv[1:]
     srv = None
     if takeover:
@@ -1017,15 +1048,14 @@ def main():
             ver = _port_busy()
             print("-" * 60)
             if ver:
-                print(" 已有实例在运行（v%s），直接在浏览器打开上面的地址即可。" % ver)
+                print(" 已有实例在运行（v%s），直接打开界面即可。" % ver)
             else:
                 print(" 端口 %d 被其他程序占用，无法启动。" % PORT)
                 print(" 可先关闭占用该端口的程序，或改用其他端口。")
             print("=" * 60)
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
+            if ver:
+                # 已有本项目实例：GUI 模式开窗口指向它，web 模式开浏览器
+                _open_interface(mode, url)
             return
 
     print(" 扫描根目录: %s" % DEFAULT_ROOT)
@@ -1035,16 +1065,10 @@ def main():
                             "普通用户（部分目录会提示拒绝访问，可用『以管理员身份启动.bat』）"))
     print(" Python    : %s" % sys.version.split()[0])
     print(" 默认删除方式: 移入回收站（可从回收站还原）")
+    if mode == "gui":
+        print(" 界面模式  : 桌面窗口（关闭窗口即停止服务；--web 可改用浏览器）")
     print(" 关闭本窗口即停止服务")
     print("=" * 60)
-    if not os.environ.get("APP_NO_BROWSER") and not takeover:
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-
-    # R4 启动预热：起来就后台跑一次增量扫描，打开页面即有数据。
-    # 测试环境用 APP_NO_WARMUP=1 关掉，避免与测试扫描抢全局 STATE。
     if not os.environ.get("APP_NO_WARMUP"):
         def _warmup():
             time.sleep(0.5)
@@ -1075,6 +1099,19 @@ def main():
             print(" 定时自动清理已启用（%s，每天 %02d 点）：每 %d 分钟检查一次"
                   % (CFG["autoClean"]["interval"], CFG["autoClean"]["hour"],
                      autoclean.CHECK_INTERVAL // 60))
+
+    if mode == "gui":
+        # 桌面窗口模式：服务跑在后台线程，主线程交给窗口消息循环；
+        # 窗口关闭 → webview.start() 返回 → shutdown，无残留监听。
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            _open_interface("gui", url)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        return
+
+    _open_interface(mode, url)
 
     try:
         srv.serve_forever()

@@ -53,12 +53,26 @@ GUIDE_FORBIDDEN = (
     ("ctypes/winreg", re.compile(r"ctypes|winreg")),
 )
 
+# 2.1 GUI 窗口壳：比 guide 稍宽 —— 允许 ctypes 但只允许隐藏控制台的窗口 API。
+GUI_FORBIDDEN = (
+    ("subprocess", re.compile(r"subprocess")),
+    ("os 命令/删除", re.compile(r"os\.(system|popen|remove|rename|rmdir)")),
+    ("shutil", re.compile(r"shutil")),
+    ("文件读写", re.compile(r"open\(")),
+    ("磁盘探测", re.compile(r"os\.(stat|lstat|scandir|listdir|walk)")),
+    ("eval/exec", re.compile(r"\b(eval|exec|__import__)\s*\(")),
+    ("winreg", re.compile(r"winreg")),
+    ("core.actions 导入", re.compile(r"^\s*(?:from\s+core\.actions|import\s+core\.actions)", re.M)),
+)
+GUI_CTYPES_ALLOWED = re.compile(
+    r"ctypes\.windll\.(?:kernel32\.GetConsoleWindow|user32\.ShowWindow)")
+
 GATE_FUNCS = ("test_g1_only_safe", "test_g2_freshness", "test_g3_default_off",
               "test_g4_recoverable", "test_g5_cli_no_delete", "test_g6_explicit_confirm")
 
 PLAN_FILES = ("PLAN-1.1.md", "PLAN-1.3.md", "PLAN-1.4.md", "PLAN-1.5.md",
               "PLAN-1.6.md", "PLAN-1.7.md", "PLAN-1.8.md", "PLAN-1.9.md",
-              "PLAN-2.0.md")
+              "PLAN-2.0.md", "PLAN-2.1.md")
 
 
 # ---------------- 基础读取 ----------------
@@ -165,7 +179,20 @@ def check_static_security(root):
         hit = [name for name, pat in GUIDE_FORBIDDEN if pat.search(g)]
         if hit:
             bad.append("引导模块零执行面被破坏：%s" % ", ".join(hit))
-    return (not bad), (bad or ["cli.py / autoclean.py / guide.py 静态安全面干净"])
+    try:
+        gui = _read(root, "core/gui.py")
+    except OSError:
+        bad.append("core/gui.py 缺失")
+    else:
+        hit = [name for name, pat in GUI_FORBIDDEN if pat.search(gui)]
+        if hit:
+            bad.append("GUI 壳零删除面被破坏：%s" % ", ".join(hit))
+        # ctypes 只允许「隐藏控制台」的窗口 API，其余调用即违规
+        ctype_uses = re.findall(r"ctypes\.[A-Za-z0-9_.]+", gui)
+        bad_ctypes = [u for u in ctype_uses if not GUI_CTYPES_ALLOWED.search(u)]
+        if bad_ctypes:
+            bad.append("GUI 壳 ctypes 越界：%s" % ", ".join(sorted(set(bad_ctypes))))
+    return (not bad), (bad or ["cli.py / autoclean.py / guide.py / gui.py 静态安全面干净"])
 
 
 # ---------------- C4 文档同步 ----------------
@@ -282,6 +309,7 @@ def _skeleton(root):
         "cli.py": "# thin cli, no deletion\n",
         "core/autoclean.py": "# scheduler, no deletion\n",
         "core/guide.py": "# static guidance only\n",
+        "core/gui.py": "# window shell, no deletion\n",
     }
     for p in PLAN_FILES:
         files[p] = "# plan\n"
