@@ -22,6 +22,7 @@ from tests import (  # noqa: E402
     test_auto,
     test_cli,
     test_config,
+    test_contract,
     test_diff,
     test_dup,
     test_ext,
@@ -89,6 +90,7 @@ def main():
         results.append(test_guide.run())  # 1.8 解锁引导：只读端点 + 零执行面断言
         results.append(test_config.run())
         results.append(test_api.run())
+        results.append(test_contract.run())  # 2.x 契约：畸形输入不断连、错误可读
         results.append(test_flow.run())
         results.append(test_increment.run())
         results.append(test_m3.run())

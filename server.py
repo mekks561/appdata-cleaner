@@ -22,7 +22,7 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 APP_NAME = "AppData 磁盘清理助手"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 BUILD = "2026-11-13"
 
 import cli  # noqa: E402  —— 1.6 命令行入口（顶层导入确保 PyInstaller 收进包）
@@ -497,6 +497,16 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- POST ----------
     def do_POST(self):
+        # 未预料的异常统一收敛成 JSON 500：客户端不应只看到连接被重置
+        try:
+            return self._do_post()
+        except Exception as ex:
+            try:
+                self._json({"error": "服务端内部错误", "detail": type(ex).__name__}, 500)
+            except Exception:
+                pass
+
+    def _do_post(self):
         if not self._guard(need_origin=True):
             return
         try:
@@ -519,6 +529,10 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length).decode("utf-8"))
             except Exception:
                 body = {}
+        if not isinstance(body, dict):
+            # 合法 JSON 但不是对象（数组/字符串/null）：按空对象处理，
+            # 让各端点走自己的「缺字段」校验分支，而不是在 .get() 上崩掉
+            body = {}
 
         u = urlparse(self.path)
         if u.path == "/api/scan":
@@ -633,24 +647,64 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "该扫描根不存在"}, 400)
         return self._save_roots(kept)
 
+    @staticmethod
+    def _int_field(body, name, default, lo, hi):
+        """读整数参数：缺省取默认；类型/范围非法返回错误文案（不抛异常）。"""
+        raw = body.get(name)
+        if raw is None or raw == "":
+            return default, None
+        if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+            return None, "%s 必须是整数" % name
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return None, "%s 必须是整数" % name
+        if v < lo or v > hi:
+            return None, "%s 必须在 %d-%d 之间" % (name, lo, hi)
+        return v, None
+
+    @staticmethod
+    def _num_field(body, name, default, lo, hi):
+        """读浮点参数：缺省取默认；类型/范围非法返回错误文案（不抛异常）。"""
+        raw = body.get(name)
+        if raw is None or raw == "":
+            return default, None
+        if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+            return None, "%s 必须是数字" % name
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            return None, "%s 必须是数字" % name
+        if v < lo or v > hi:
+            return None, "%s 必须在 %s-%s 之间" % (name, lo, hi)
+        return v, None
+
     def _post_scan(self, body):
         if STATE.running():
             return self._json({"error": "扫描进行中，请稍候"}, 409)
-        root = os.path.abspath(body.get("root") or DEFAULT_ROOT)
+        raw_root = body.get("root")
+        if raw_root not in (None, "") and not isinstance(raw_root, str):
+            return self._json({"error": "root 必须是字符串路径"}, 400)
+        root = os.path.abspath(raw_root or DEFAULT_ROOT)
         if not inside(USER_HOME, root):
             return self._json({"error": "只允许扫描当前用户目录下的路径"}, 403)
         if not os.path.isdir(root):
             return self._json({"error": "目录不存在"}, 400)
 
-        depth = min(6, max(1, int(body.get("maxDepth") or 3)))
-        hot = max(0.001, float(body.get("hotMB") or 50))
-        big = max(0.001, float(body.get("bigMB") or 100))
+        depth, err_depth = self._int_field(body, "maxDepth", 3, 1, 6)
+        hot, err_hot = self._num_field(body, "hotMB", 50.0, 0.001, 102400.0)
+        big, err_big = self._num_field(body, "bigMB", 100.0, 0.001, 102400.0)
+        err = err_depth or err_hot or err_big
+        if err:
+            return self._json({"error": err}, 400)
         fresh = bool(body.get("fresh"))
         _launch_scan(root, depth, hot, big, fresh)
         return self._json({"ok": True, "version": APP_VERSION, "root": root, "fresh": fresh})
 
     def _post_list(self, body):
         p = body.get("path") or ""
+        if not isinstance(p, str):
+            return self._json({"error": "path 必须是字符串"}, 400)
         root = STATE.root(DEFAULT_ROOT)
         if not inside(root, p) or not os.path.isdir(safe_path(p)):
             return self._json({"error": "路径无效或越界"}, 400)
@@ -663,6 +717,8 @@ class Handler(BaseHTTPRequestHandler):
     def _post_preview(self, body):
         root = STATE.root(DEFAULT_ROOT)
         paths = body.get("paths") or []
+        if not isinstance(paths, list):
+            return self._json({"error": "paths 必须是数组"}, 400)
         rows, total = actions.preview_rows(paths, root)
         token = TOKENS.issue(paths, total)
         return self._json(

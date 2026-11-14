@@ -16,3 +16,20 @@ select = ["E", "F", "W", "I"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["core"]
+
+[tool.pytest.ini_options]
+# 现有断言组仍是 test_*.py 里的 run() 形式，由 qa/ 驱动，避免直接收集报 fixture 错
+testpaths = ["qa"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["core", "server"]
+parallel = true
+omit = ["tests/*", "qa/*"]
+
+[tool.coverage.report]
+skip_empty = true
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+# 当前实测 77%（core 约 78%、server 74%）；只升不降，作为棘轮门槛
+fail_under = 75
