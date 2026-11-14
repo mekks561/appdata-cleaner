@@ -9,7 +9,7 @@ import os
 import shutil
 
 from core import snapshot
-from tests.common import APP, Checker, ROOT, fresh_testdata, get, scan
+from tests.common import APP, ROOT, Checker, fresh_testdata, get, scan
 
 MB = 1024 * 1024
 BASE = os.path.join(APP, "diff_fake_root")

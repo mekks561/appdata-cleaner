@@ -4,8 +4,7 @@
 import os
 import re
 
-from tests.common import (APP, ROOT, Checker, exec_, fresh_testdata, get, post,
-                          preview, scan)
+from tests.common import APP, ROOT, Checker, exec_, fresh_testdata, get, post, preview, scan
 
 
 def run():

@@ -18,7 +18,7 @@ APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP)
 
 from core import autoclean, config  # noqa: E402
-from tests.common import Checker, ROOT, fresh_testdata, get, post, scan  # noqa: E402
+from tests.common import ROOT, Checker, fresh_testdata, get, post, scan  # noqa: E402
 
 NOW = time.time()
 LOG_DIR = os.path.join(APP, "logs")

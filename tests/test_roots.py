@@ -13,11 +13,11 @@ API 段会修改 CFG["roots"]：开头整份配置快照，finally 恢复。
 
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import config, roots as roots_mod  # noqa: E402
+from core import config  # noqa: E402
+from core import roots as roots_mod
 from tests.common import APP, Checker, get, post  # noqa: E402
 
 HOME = os.path.expanduser("~")

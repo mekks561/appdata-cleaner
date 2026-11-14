@@ -178,9 +178,11 @@ def test_no_recursion_guard(c):
     src = open(os.path.join(APP, "release_gate.py"), encoding="utf-8").read()
     c.ok("C6 调用 run_tests.py", "run_tests.py" in src)
     c.ok("C5 同时校验源码与 exe 形态", "dist" in src and "--version" in src)
-    c.ok("默认完整门禁含 C5/C6", 'if not args.no_smoke' in src and 'if not args.no_regression' in src)
-    c.ok("本测试组未调用 check_regression", "gate.check_regression(" not in
-         open(os.path.abspath(__file__), encoding="utf-8").read().split("def test_no_recursion_guard")[0])
+    c.ok("默认完整门禁含 C5/C6",
+         'if not args.no_smoke' in src and 'if not args.no_regression' in src)
+    this_src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    this_src = this_src.split("def test_no_recursion_guard")[0]
+    c.ok("本测试组未调用 check_regression", "gate.check_regression(" not in this_src)
 
 
 def run():

@@ -16,7 +16,9 @@ MB = 1024 * 1024
 
 
 def post(path, body=None, headers=None, raw=None, timeout=30):
-    data = raw if raw is not None else (json.dumps(body).encode("utf-8") if body is not None else None)
+    data = raw
+    if data is None and body is not None:
+        data = json.dumps(body).encode("utf-8")
     h = {"Content-Type": "application/json"}
     h.update(headers or {})
     req = urllib.request.Request(BASE + path, data=data, headers=h)

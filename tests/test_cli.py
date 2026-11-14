@@ -19,7 +19,7 @@ sys.path.insert(0, APP)
 
 import cli  # noqa: E402
 from core import history  # noqa: E402
-from tests.common import Checker, MB  # noqa: E402
+from tests.common import MB, Checker  # noqa: E402
 
 TMP_ROOT = os.path.join(APP, "testdata", "_cli")
 _SERVER = None

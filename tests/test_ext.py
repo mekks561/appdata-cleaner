@@ -15,7 +15,7 @@ import time
 
 from core import scan as scan_mod
 from core import snapshot
-from tests.common import (APP, MB, ROOT, Checker, fresh_testdata, get, scan)
+from tests.common import APP, MB, ROOT, Checker, fresh_testdata, get, scan
 
 CACHE_DIR = os.path.join(APP, "cache")
 

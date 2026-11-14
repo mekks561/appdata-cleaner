@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.common import (ROOT, Checker, get, post, scan)  # noqa: E402
+from tests.common import ROOT, Checker, get, post, scan  # noqa: E402
 
 
 def run():
@@ -31,7 +31,8 @@ def run():
 
     st, body = post("/api/config", {"port": 80})
     c.eq("非法端口被拒 400", st, 400)
-    st, body = post("/api/config", {"rules": [{"segments": ["local"], "level": "safe", "note": ""}]})
+    st, body = post("/api/config",
+                    {"rules": [{"segments": ["local"], "level": "safe", "note": ""}]})
     c.eq("空 note 规则被拒", st, 400)
     c.ok("拒绝时给出明细", isinstance(body.get("details"), list) and body["details"], body)
 
@@ -61,7 +62,7 @@ def run():
     # 疑似缓存目录（heuristics 命中 cache 段名）——绝不能进一键清单
     suspect_dir = os.path.join(ROOT, "Local", "FakeApp", "Cache")
 
-    res = scan(fresh=True)
+    scan(fresh=True)
 
     st, pv = post("/api/oneclick/preview", {})
     c.eq("preview 200", st, 200)

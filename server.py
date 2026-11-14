@@ -14,7 +14,7 @@ import threading
 import time
 import urllib.request
 import webbrowser
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 if sys.version_info < (3, 9):
@@ -25,15 +25,24 @@ APP_NAME = "AppData 磁盘清理助手"
 APP_VERSION = "2.1.0"
 BUILD = "2026-11-13"
 
-from core import actions, config, dupfind, guide, history, rulepkg, rules, scan  # noqa: E402
+import cli  # noqa: E402  —— 1.6 命令行入口（顶层导入确保 PyInstaller 收进包）
+from core import (  # noqa: E402
+    actions,
+    autoclean,  # noqa: E402
+    config,
+    dupfind,
+    guide,
+    history,
+    rulepkg,
+    rules,
+    scan,
+)
 from core import gui as gui_mod  # noqa: E402  —— 2.1 桌面窗口薄壳（延迟导入 webview）
 from core import roots as roots_mod  # noqa: E402  —— 1.9 多根校验单点
 from core.dupfind import DUP  # noqa: E402
 from core.errors import classify_error  # noqa: E402
 from core.fsutil import dir_usage, inside, safe_path  # noqa: E402
 from core.store import STATE, TOKENS  # noqa: E402
-from core import autoclean  # noqa: E402
-import cli  # noqa: E402  —— 1.6 命令行入口（顶层导入确保 PyInstaller 收进包）
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # PyInstaller onefile：静态资源在解压目录（只读），config/logs/cache 必须放 exe 旁边（可写）
@@ -369,7 +378,10 @@ class Handler(BaseHTTPRequestHandler):
                 "version": APP_VERSION,
                 "build": BUILD,
                 "python": sys.version.split()[0],
-                "os": "%s %s" % (os.name, sys.getwindowsversion().major if hasattr(sys, "getwindowsversion") else ""),
+                "os": "%s %s" % (
+                    os.name,
+                    sys.getwindowsversion().major if hasattr(sys, "getwindowsversion") else "",
+                ),
                 "root": root,
                 "defaultRoot": DEFAULT_ROOT,
                 "userHome": USER_HOME,

@@ -6,8 +6,7 @@
 
 import os
 
-from tests.common import (APP, ROOT, Checker, exec_, fresh_testdata, post,
-                          preview, scan)
+from tests.common import APP, ROOT, Checker, exec_, fresh_testdata, preview, scan
 
 
 def run():

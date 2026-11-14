@@ -24,10 +24,10 @@ ALLOWED_PREFIXES = ("https://support.microsoft.com/",
 
 def _links_ok(links):
     return (isinstance(links, list) and len(links) >= 3
-            and all(isinstance(l, dict) and isinstance(l.get("title"), str)
-                    and isinstance(l.get("url"), str)
-                    and l["url"].startswith(ALLOWED_PREFIXES)
-                    for l in links))
+            and all(isinstance(lnk, dict) and isinstance(lnk.get("title"), str)
+                    and isinstance(lnk.get("url"), str)
+                    and lnk["url"].startswith(ALLOWED_PREFIXES)
+                    for lnk in links))
 
 
 # ---------------- 单元：路径校验与复核 ----------------

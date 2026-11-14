@@ -106,7 +106,8 @@ def run():
 
             # 用户 safe 覆盖内置 suspect（对自己的目录有最终解释权）
             rules.apply_user_rules([
-                {"segments": ["local", "nvidia"], "level": "safe", "note": "我确认整个 NVIDIA 都是缓存"},
+                {"segments": ["local", "nvidia"], "level": "safe",
+                 "note": "我确认整个 NVIDIA 都是缓存"},
             ])
             r3 = rules.classify(U + r"\Local\NVIDIA")
             c.eq("用户 safe 覆盖内置 suspect", r3["level"], "safe")

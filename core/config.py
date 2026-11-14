@@ -62,7 +62,8 @@ def _validate_dest(v):
         sysdir = os.environ.get(key)
         if sysdir:
             try:
-                if os.path.normcase(d).startswith(os.path.normcase(os.path.abspath(sysdir)).rstrip("\\") + "\\"):
+                sys_norm = os.path.normcase(os.path.abspath(sysdir)).rstrip("\\")
+                if os.path.normcase(d).startswith(sys_norm + "\\"):
                     return None, "不能位于系统目录 %s 内" % sysdir
             except Exception:
                 pass
@@ -250,7 +251,9 @@ def load(app_dir):
             # 写坏的配置备份后重建，用户可从 .bak 里捞回手工改的内容
             try:
                 os.replace(path, path + ".bad")
-                warnings.append("config.json 无法解析（%s），已回退默认并备份为 config.json.bad" % ex)
+                warnings.append(
+                    "config.json 无法解析（%s），已回退默认并备份为 config.json.bad" % ex
+                )
             except OSError:
                 warnings.append("config.json 无法解析且备份失败，已回退默认")
             raw = None

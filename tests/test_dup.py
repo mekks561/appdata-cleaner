@@ -46,7 +46,8 @@ def build_samples():
     if os.path.isdir(BASE):
         shutil.rmtree(BASE, ignore_errors=True)
     big = 300 * KB
-    p = lambda *a: os.path.join(BASE, *a)
+    def p(*a):
+        return os.path.join(BASE, *a)
 
     # 1) 同内容不同名（应成组）
     _write(p("Local", "FakeDup", "a1.bin"), big, b"A")

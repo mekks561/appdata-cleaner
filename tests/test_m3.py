@@ -8,8 +8,7 @@
 import os
 import shutil
 
-from tests.common import (APP, MB, ROOT, Checker, exec_, fresh_testdata, get,
-                          post, preview)
+from tests.common import APP, MB, ROOT, Checker, exec_, fresh_testdata, get, post, preview
 
 
 def run():

@@ -17,11 +17,28 @@ import urllib.request
 APP = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP)
 
-from tests import (test_api, test_auto, test_cli, test_config, test_diff,  # noqa: E402
-                   test_dup, test_ext, test_flow, test_gate, test_gui,
-                   test_guide, test_increment, test_m1, test_m3, test_parallel,
-                   test_release_gate, test_rulepkg, test_roots, test_rules,
-                   test_warn)
+from tests import (  # noqa: E402
+    test_api,
+    test_auto,
+    test_cli,
+    test_config,
+    test_diff,
+    test_dup,
+    test_ext,
+    test_flow,
+    test_gate,
+    test_gui,
+    test_guide,
+    test_increment,
+    test_m1,
+    test_m3,
+    test_parallel,
+    test_release_gate,
+    test_roots,
+    test_rulepkg,
+    test_rules,
+    test_warn,
+)
 from tests.common import BASE  # noqa: E402
 
 
@@ -92,7 +109,8 @@ def main():
 
     ok = all(results)
     print("\n" + "=" * 46)
-    print(" 结果：%s（%d/%d 组通过）" % ("全部通过" if ok else "存在失败", sum(results), len(results)))
+    print(" 结果：%s（%d/%d 组通过）"
+          % ("全部通过" if ok else "存在失败", sum(results), len(results)))
     print("=" * 46)
     return 0 if ok else 1
 

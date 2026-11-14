@@ -10,8 +10,7 @@ import os
 import time
 
 from core import snapshot
-from tests.common import (APP, MB, ROOT, Checker, fresh_testdata, get, post,
-                          scan)
+from tests.common import APP, MB, ROOT, Checker, fresh_testdata, scan
 
 CACHE_DIR = os.path.join(APP, "cache")
 
