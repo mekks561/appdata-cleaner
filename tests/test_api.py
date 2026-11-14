@@ -19,14 +19,15 @@ def run():
     with open(os.path.join(APP, "server.py"), encoding="utf-8") as f:
         declared = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', f.read()).group(1)
     c.eq("version 与服务端常量一致", info.get("version"), declared)
-    c.ok("version 格式为 x.y.z", bool(re.fullmatch(r"\d+\.\d+\.\d+", declared)),
-         declared)
+    c.ok("version 格式为 x.y.z", bool(re.fullmatch(r"\d+\.\d+\.\d+", declared)), declared)
     c.ok("build 非空", bool(info.get("build")), info.get("build"))
     c.ok("python 字段存在", bool(info.get("python")), info.get("python"))
     c.ok("logDir 字段存在", bool(info.get("logDir")), info.get("logDir"))
-    c.ok("levels 字段含四级",
-         set(info.get("levels", {})) == {"safe", "suspect", "data", "protected"},
-         info.get("levels"))
+    c.ok(
+        "levels 字段含四级",
+        set(info.get("levels", {})) == {"safe", "suspect", "data", "protected"},
+        info.get("levels"),
+    )
 
     # —— R3 安全 ——
     st, body = post("/api/scan", {"root": ROOT}, {"Origin": "http://evil.test"})
@@ -67,9 +68,11 @@ def run():
     res = scan()
     tr = res.get("truncated") or {}
     for key in ("hot", "big", "errors"):
-        c.ok("truncated.%s 字段齐备" % key,
-             isinstance(tr.get(key), dict) and {"shown", "total", "truncated"} <= set(tr[key]),
-             tr.get(key))
+        c.ok(
+            "truncated.%s 字段齐备" % key,
+            isinstance(tr.get(key), dict) and {"shown", "total", "truncated"} <= set(tr[key]),
+            tr.get(key),
+        )
     c.ok("hot 排行带 level/note", "level" in res["hot"][0] and "note" in res["hot"][0])
 
     st, lst = post("/api/list", {"path": os.path.join(ROOT, "Local")})

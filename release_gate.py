@@ -40,8 +40,15 @@ VERSION_SOURCES = (
 CHANGELOG_HEAD_RE = re.compile(r"^## ([\d.]+)\s*[—\-]", re.M)
 
 # 删除面 token（不带括号，避免与本文件自身的常量字面量互相误伤）
-DELETE_TOKENS = ("os.remove", "os.unlink", "shutil.rmtree", "force_remove",
-                 "permanent", "recycle", "exec_action")
+DELETE_TOKENS = (
+    "os.remove",
+    "os.unlink",
+    "shutil.rmtree",
+    "force_remove",
+    "permanent",
+    "recycle",
+    "exec_action",
+)
 CORE_DELETE_TOKENS = ("os.remove", "os.unlink", "shutil.rmtree")
 GUIDE_FORBIDDEN = (
     ("subprocess", re.compile(r"subprocess")),
@@ -65,17 +72,34 @@ GUI_FORBIDDEN = (
     ("core.actions 导入", re.compile(r"^\s*(?:from\s+core\.actions|import\s+core\.actions)", re.M)),
 )
 GUI_CTYPES_ALLOWED = re.compile(
-    r"ctypes\.windll\.(?:kernel32\.GetConsoleWindow|user32\.ShowWindow)")
+    r"ctypes\.windll\.(?:kernel32\.GetConsoleWindow|user32\.ShowWindow)"
+)
 
-GATE_FUNCS = ("test_g1_only_safe", "test_g2_freshness", "test_g3_default_off",
-              "test_g4_recoverable", "test_g5_cli_no_delete", "test_g6_explicit_confirm")
+GATE_FUNCS = (
+    "test_g1_only_safe",
+    "test_g2_freshness",
+    "test_g3_default_off",
+    "test_g4_recoverable",
+    "test_g5_cli_no_delete",
+    "test_g6_explicit_confirm",
+)
 
-PLAN_FILES = ("PLAN-1.1.md", "PLAN-1.3.md", "PLAN-1.4.md", "PLAN-1.5.md",
-              "PLAN-1.6.md", "PLAN-1.7.md", "PLAN-1.8.md", "PLAN-1.9.md",
-              "PLAN-2.0.md", "PLAN-2.1.md")
+PLAN_FILES = (
+    "PLAN-1.1.md",
+    "PLAN-1.3.md",
+    "PLAN-1.4.md",
+    "PLAN-1.5.md",
+    "PLAN-1.6.md",
+    "PLAN-1.7.md",
+    "PLAN-1.8.md",
+    "PLAN-1.9.md",
+    "PLAN-2.0.md",
+    "PLAN-2.1.md",
+)
 
 
 # ---------------- 基础读取 ----------------
+
 
 def _read(root, rel):
     with open(os.path.join(root, rel), "r", encoding="utf-8") as f:
@@ -92,6 +116,7 @@ def _version(root):
 
 
 # ---------------- C1 版本一致性 ----------------
+
 
 def check_version_sources(root):
     ver = _version(root)
@@ -124,6 +149,7 @@ def check_version_sources(root):
 
 # ---------------- C2 门禁矩阵在册 ----------------
 
+
 def check_gate_suite(root):
     bad = []
     try:
@@ -144,8 +170,9 @@ def check_gate_suite(root):
     tdir = os.path.join(root, "tests")
     groups = []
     if os.path.isdir(tdir):
-        groups = sorted(f[:-3] for f in os.listdir(tdir)
-                        if f.startswith("test_") and f.endswith(".py"))
+        groups = sorted(
+            f[:-3] for f in os.listdir(tdir) if f.startswith("test_") and f.endswith(".py")
+        )
         missing = [g for g in groups if (g not in rt) or ((g + ".run()") not in rt)]
         if missing:
             bad.append("以下测试组未在 run_tests.py 注册或未被调用：%s" % ", ".join(missing))
@@ -155,6 +182,7 @@ def check_gate_suite(root):
 
 
 # ---------------- C3 静态安全面 ----------------
+
 
 def check_static_security(root):
     bad = []
@@ -196,6 +224,7 @@ def check_static_security(root):
 
 
 # ---------------- C4 文档同步 ----------------
+
 
 def check_docs(root):
     bad = []
@@ -240,6 +269,7 @@ def check_docs(root):
 
 # ---------------- C5 双形态产物 ----------------
 
+
 def check_dual_smoke(root):
     ver = _version(root)
     if not ver:
@@ -247,8 +277,13 @@ def check_dual_smoke(root):
     want = "AppDataCleaner v" + ver
     bad = []
     try:
-        r = subprocess.run([sys.executable, "server.py", "--version"], cwd=root,
-                           capture_output=True, text=True, timeout=60)
+        r = subprocess.run(
+            [sys.executable, "server.py", "--version"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         out = (r.stdout or "") + (r.stderr or "")
         if r.returncode != 0 or want not in out:
             bad.append("源码形态 --version 异常：exit=%d out=%r" % (r.returncode, out[:120]))
@@ -260,8 +295,9 @@ def check_dual_smoke(root):
         bad.append("exe 形态缺失：dist/AppDataCleaner.exe 未构建（先跑 PyInstaller）")
     else:
         try:
-            r = subprocess.run([exe, "--version"], cwd=root,
-                               capture_output=True, text=True, timeout=90)
+            r = subprocess.run(
+                [exe, "--version"], cwd=root, capture_output=True, text=True, timeout=90
+            )
             out = (r.stdout or "") + (r.stderr or "")
             if r.returncode != 0 or want not in out:
                 bad.append("exe 形态 --version 异常：exit=%d out=%r" % (r.returncode, out[:120]))
@@ -272,19 +308,24 @@ def check_dual_smoke(root):
 
 # ---------------- C6 全量回归 ----------------
 
+
 def check_regression(root):
     try:
-        r = subprocess.run([sys.executable, "run_tests.py"], cwd=root,
-                           capture_output=True, text=True, timeout=1200)
+        r = subprocess.run(
+            [sys.executable, "run_tests.py"], cwd=root, capture_output=True, text=True, timeout=1200
+        )
     except Exception as e:
         return False, ["全量回归调用失败：%s" % e]
     tail = (r.stdout or "").strip().splitlines()[-4:]
-    return (r.returncode == 0), (["全量回归通过：%s" % " | ".join(tail)]
-                                 if r.returncode == 0 else
-                                 ["全量回归失败 exit=%d：%s" % (r.returncode, " | ".join(tail))])
+    return (r.returncode == 0), (
+        ["全量回归通过：%s" % " | ".join(tail)]
+        if r.returncode == 0
+        else ["全量回归失败 exit=%d：%s" % (r.returncode, " | ".join(tail))]
+    )
 
 
 # ---------------- 门禁自检 ----------------
+
 
 def _skeleton(root):
     """构造一份「理想仓库」最小骨架，用于验证检查器本身。"""
@@ -300,10 +341,11 @@ def _skeleton(root):
             "## 使用\n\n1. 扫描\n2. 预览\n3. 执行\n\n"
             "## 命令行模式\n\n--version\n\n"
             "## 测试\n\npython run_tests.py\n\n"
-            "core/roots.py core/guide.py core/rulepkg.py release_gate.py\n" % ver),
+            "core/roots.py core/guide.py core/rulepkg.py release_gate.py\n" % ver
+        ),
         "CHANGELOG.md": "# 更新记录\n\n## %s — 2026-11-12（收口）\n\n- x\n" % ver,
         "run_tests.py": "from tests import test_gate, test_release_gate\n"
-                        "test_gate.run()\ntest_release_gate.run()\n",
+        "test_gate.run()\ntest_release_gate.run()\n",
         "tests/test_gate.py": "".join("def %s(c):\n    pass\n" % f for f in GATE_FUNCS),
         "tests/test_release_gate.py": "def run():\n    return True\n",
         "cli.py": "# thin cli, no deletion\n",
@@ -338,22 +380,37 @@ def self_test():
     # 这类字符串字面量自指误伤（源码里出现不等于发生了调用）。
     own = _read(APP, "release_gate.py")
     tree = ast.parse(own)
-    banned = {"remove", "unlink", "rmtree", "force_remove", "permanent",
-              "recycle", "exec_action", "system", "popen"}
+    banned = {
+        "remove",
+        "unlink",
+        "rmtree",
+        "force_remove",
+        "permanent",
+        "recycle",
+        "exec_action",
+        "system",
+        "popen",
+    }
     own_bad = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         f = node.func
-        name = (f.value.id + "." + f.attr if isinstance(f, ast.Attribute)
-                and isinstance(f.value, ast.Name)
-                else f.attr if isinstance(f, ast.Attribute)
-                else f.id if isinstance(f, ast.Name) else "")
+        name = (
+            f.value.id + "." + f.attr
+            if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+            else f.attr
+            if isinstance(f, ast.Attribute)
+            else f.id
+            if isinstance(f, ast.Name)
+            else ""
+        )
         if name.split(".")[-1] in banned:
             own_bad.append(name)
     own_bad = sorted(set(own_bad))
-    results.append(("自检：门禁脚本自身零删除面", not own_bad,
-                    own_bad or ["AST 未发现任何删除/命令执行调用"]))
+    results.append(
+        ("自检：门禁脚本自身零删除面", not own_bad, own_bad or ["AST 未发现任何删除/命令执行调用"])
+    )
 
     with tempfile.TemporaryDirectory(prefix="adc-gate-") as td:
         repo = os.path.join(td, "repo")
@@ -415,14 +472,23 @@ def self_test():
 
     ok_all = all(ok for _, ok, _ in results)
     for name, ok, detail in results:
-        print("  [%s] %s%s" % ("OK" if ok else "FAIL", name,
-                               "" if ok else " → " + "; ".join(str(d) for d in detail)))
-    print("\n门禁自检：%s（%d/%d）" % ("全部通过" if ok_all else "存在失败",
-                                     sum(1 for _, ok, _ in results if ok), len(results)))
+        print(
+            "  [%s] %s%s"
+            % (
+                "OK" if ok else "FAIL",
+                name,
+                "" if ok else " → " + "; ".join(str(d) for d in detail),
+            )
+        )
+    print(
+        "\n门禁自检：%s（%d/%d）"
+        % ("全部通过" if ok_all else "存在失败", sum(1 for _, ok, _ in results if ok), len(results))
+    )
     return 0 if ok_all else 1
 
 
 # ---------------- 入口 ----------------
+
 
 def main():
     ap = argparse.ArgumentParser(description="AppData Cleaner 发版门禁")
@@ -462,9 +528,14 @@ def main():
     if os.path.isdir(log_dir):
         with open(os.path.join(log_dir, "gate_report.json"), "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
-    print("\n发版门禁：%s（%d/%d 项）" % (
-        "全部通过，允许发版" if report["ok"] else "存在阻断项，禁止发版",
-        sum(1 for x in report["checks"] if x["ok"]), len(report["checks"])))
+    print(
+        "\n发版门禁：%s（%d/%d 项）"
+        % (
+            "全部通过，允许发版" if report["ok"] else "存在阻断项，禁止发版",
+            sum(1 for x in report["checks"] if x["ok"]),
+            len(report["checks"]),
+        )
+    )
     if args.json:
         print(json.dumps(report, ensure_ascii=False))
     return 0 if report["ok"] else 1

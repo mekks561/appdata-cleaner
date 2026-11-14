@@ -17,9 +17,9 @@ import threading
 import time
 from datetime import datetime
 
-FRESH_SECONDS = 7 * 86400        # 扫描结果最长 7 天
-CHECK_INTERVAL = 300             # 每 5 分钟醒来检查一次是否到期
-RUN_MODE = "auto-oneclick"       # 历史记录模式，UI 可据此披露
+FRESH_SECONDS = 7 * 86400  # 扫描结果最长 7 天
+CHECK_INTERVAL = 300  # 每 5 分钟醒来检查一次是否到期
+RUN_MODE = "auto-oneclick"  # 历史记录模式，UI 可据此披露
 
 _INTERVALS = ("daily", "weekly")
 
@@ -58,7 +58,7 @@ def is_due(cfg, last_epoch, scan_epoch, now=None):
     if scan_epoch is None:
         return False, "no-result"
     if now - scan_epoch > FRESH_SECONDS:
-        return False, "stale"          # 7 天新鲜度守门：宁可不清不乱清
+        return False, "stale"  # 7 天新鲜度守门：宁可不清不乱清
 
     # 未到当日计划时刻
     lt = time.localtime(now)
@@ -89,8 +89,7 @@ def maybe_run(cfg, last_epoch_fn, scan_epoch_fn, run_fn, now=None):
     if not due:
         return {"ran": False, "reason": reason}
     freed, count = run_fn()
-    return {"ran": True, "reason": "done", "freed": freed,
-            "count": count, "at": int(time.time())}
+    return {"ran": True, "reason": "done", "freed": freed, "count": count, "at": int(time.time())}
 
 
 class Scheduler(threading.Thread):
@@ -100,17 +99,16 @@ class Scheduler(threading.Thread):
     本类不含任何业务规则 —— 守门逻辑全部在 is_due / maybe_run，可单测。
     """
 
-    def __init__(self, cfg_fn, last_epoch_fn, scan_epoch_fn, run_fn,
-                 on_done=None):
+    def __init__(self, cfg_fn, last_epoch_fn, scan_epoch_fn, run_fn, on_done=None):
         super().__init__(daemon=True, name="auto-clean")
         self.cfg_fn = cfg_fn
         self.last_epoch_fn = last_epoch_fn
         self.scan_epoch_fn = scan_epoch_fn
         self.run_fn = run_fn
-        self.on_done = on_done          # 回调(result dict)，供日志/状态披露
+        self.on_done = on_done  # 回调(result dict)，供日志/状态披露
         self._stop = threading.Event()
         self.last_result = None
-        self.last_error = None          # 最近一次调度异常（1.5 可观测性）
+        self.last_error = None  # 最近一次调度异常（1.5 可观测性）
 
     def stop(self):
         self._stop.set()
@@ -122,8 +120,7 @@ class Scheduler(threading.Thread):
         守门逻辑（maybe_run）保持不变，不因记录错误而触发清理。
         """
         try:
-            r = maybe_run(self.cfg_fn(), self.last_epoch_fn,
-                          self.scan_epoch_fn, self.run_fn)
+            r = maybe_run(self.cfg_fn(), self.last_epoch_fn, self.scan_epoch_fn, self.run_fn)
             if r.get("ran") or (self.on_done and r.get("reason") == "stale"):
                 self.last_result = r
                 if r.get("ran") and self.on_done:
@@ -135,8 +132,7 @@ class Scheduler(threading.Thread):
                 "type": type(ex).__name__,
                 "message": str(ex)[:200],
             }
-            return {"ran": False, "reason": "scheduler-error",
-                    "error": str(ex)[:200]}
+            return {"ran": False, "reason": "scheduler-error", "error": str(ex)[:200]}
 
     def snapshot(self):
         """调度线程当前健康状态（供 /api/auto/status 披露）。"""

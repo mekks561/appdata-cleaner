@@ -27,10 +27,11 @@ MAX_GROUPS = 500
 
 ATTR_REPARSE = 0x400
 ATTR_OFFLINE = 0x1000
-ATTR_RECALL = 0x400000          # 云盘占位：读内容会触发下载
+ATTR_RECALL = 0x400000  # 云盘占位：读内容会触发下载
 
 
 # ---------------- 状态（供 /api/dup/status 用） ----------------
+
 
 class DupState(object):
     def __init__(self):
@@ -83,6 +84,7 @@ DUP = DupState()
 
 
 # ---------------- 底层 ----------------
+
 
 def _skip_reason(st):
     """返回跳过原因；None 表示是正常候选。
@@ -155,12 +157,14 @@ def collect(root, min_size, on_phase=None, cancel=None):
                             seen += 1
                             if seen > MAX_FILES:
                                 continue
-                            files.append({
-                                "p": e.path,
-                                "s": int(st.st_size),
-                                "m": int(st.st_mtime),
-                                "level": rules.classify(d).get("level", ""),
-                            })
+                            files.append(
+                                {
+                                    "p": e.path,
+                                    "s": int(st.st_size),
+                                    "m": int(st.st_mtime),
+                                    "level": rules.classify(d).get("level", ""),
+                                }
+                            )
                             if on_phase and seen % 5000 == 0:
                                 on_phase("枚举候选文件（%d）" % seen)
                     except OSError:
@@ -197,8 +201,8 @@ def full_digest(path, cancel=None):
 
 # ---------------- 主流程 ----------------
 
-def find_duplicates(root, min_size=10 * MB, budget_sec=30.0, cancel=None,
-                    on_phase=None):
+
+def find_duplicates(root, min_size=10 * MB, budget_sec=30.0, cancel=None, on_phase=None):
     """返回 {groups, skipped, partial, scannedFiles, costMs, hashedBytes}。"""
     t0 = time.time()
 
@@ -275,19 +279,26 @@ def find_duplicates(root, min_size=10 * MB, budget_sec=30.0, cancel=None,
             size = items[0]["s"]
             if any(x["s"] != size for x in items):
                 continue
-            items.sort(key=lambda x: -x["m"])          # 最新修改的排第一
-            copies = [{
-                "p": x["p"], "m": x["m"], "level": x["level"],
-                "keep": i == 0,
-            } for i, x in enumerate(items)]
-            groups.append({
-                "hash": digest,
-                "size": size,
-                "count": len(copies),
-                "copies": copies,
-                "keepSuggestion": copies[0]["p"],
-                "reclaimable": size * (len(copies) - 1),
-            })
+            items.sort(key=lambda x: -x["m"])  # 最新修改的排第一
+            copies = [
+                {
+                    "p": x["p"],
+                    "m": x["m"],
+                    "level": x["level"],
+                    "keep": i == 0,
+                }
+                for i, x in enumerate(items)
+            ]
+            groups.append(
+                {
+                    "hash": digest,
+                    "size": size,
+                    "count": len(copies),
+                    "copies": copies,
+                    "keepSuggestion": copies[0]["p"],
+                    "reclaimable": size * (len(copies) - 1),
+                }
+            )
 
     groups.sort(key=lambda g: -g["reclaimable"])
     return {

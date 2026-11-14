@@ -69,8 +69,15 @@ class _State(object):
         with self._lock:
             ctx = self._ctx
             if ctx is None:
-                return {"running": self._running, "phase": self._phase, "files": 0,
-                        "bytes": 0, "hotCount": 0, "elapsed": 0, "done": False}
+                return {
+                    "running": self._running,
+                    "phase": self._phase,
+                    "files": 0,
+                    "bytes": 0,
+                    "hotCount": 0,
+                    "elapsed": 0,
+                    "done": False,
+                }
             elapsed = ctx.elapsed or round(time.time() - ctx.start, 1)
             return {
                 "running": self._running,

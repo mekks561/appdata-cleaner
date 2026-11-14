@@ -100,13 +100,15 @@ def scan(root=None, max_depth=3, hot_mb=1, big_mb=5, timeout=90, fresh=False):
     root = root or ROOT
     _s, before = get("/api/result")
     before_seq = (before or {}).get("seq")
-    if before_seq is None:            # 兼容无 seq 的旧实例
+    if before_seq is None:  # 兼容无 seq 的旧实例
         before_seq = (before or {}).get("scannedAt")
         key = "scannedAt"
     else:
         key = "seq"
-    st, body = post("/api/scan", {"root": root, "maxDepth": max_depth,
-                                  "hotMB": hot_mb, "bigMB": big_mb, "fresh": fresh})
+    st, body = post(
+        "/api/scan",
+        {"root": root, "maxDepth": max_depth, "hotMB": hot_mb, "bigMB": big_mb, "fresh": fresh},
+    )
     if st != 200:
         raise RuntimeError("扫描启动失败: %s %s" % (st, body))
     t0 = time.time()
@@ -126,8 +128,10 @@ def preview(paths):
 
 
 def exec_(token, paths, mode="recycle", dest="", confirm=""):
-    st, body = post("/api/exec", {"token": token, "paths": paths, "mode": mode,
-                                  "dest": dest, "confirmText": confirm})
+    st, body = post(
+        "/api/exec",
+        {"token": token, "paths": paths, "mode": mode, "dest": dest, "confirmText": confirm},
+    )
     return st, body
 
 

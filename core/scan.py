@@ -36,17 +36,17 @@ from concurrent.futures import ThreadPoolExecutor
 from . import rules, snapshot
 from .fsutil import dir_usage, key, safe_path, tree_size
 
-HOT_SHOW = 400          # 排行展示上限
-BIG_SHOW = 300          # 大文件展示上限
-HOT_KEEP = 4000         # 内存中最多保留的候选数
+HOT_SHOW = 400  # 排行展示上限
+BIG_SHOW = 300  # 大文件展示上限
+HOT_KEEP = 4000  # 内存中最多保留的候选数
 BIG_KEEP = 3000
 ERROR_KEEP = 500
-PROGRESS_BATCH = 8192   # 每累计这么多文件提交一次进度
+PROGRESS_BATCH = 8192  # 每累计这么多文件提交一次进度
 
 # 1.4 R4：全树扩展名聚合的展示上限（聚合本身不限类型数，只裁剪输出）
 EXT_SHOW = 40
 EXT_DIR_SHOW = 8
-NO_EXT = "(无后缀)"     # 与前端 extOf() 的口径一致
+NO_EXT = "(无后缀)"  # 与前端 extOf() 的口径一致
 
 # 候选收集下限：与界面阈值解耦，保证「这次用 200MB 扫、下次用 10MB 扫」
 # 复用快照时不会漏掉 10~200MB 之间的目录。
@@ -76,7 +76,7 @@ class ScanCtx(object):
     def __init__(self, root, max_depth, hot_threshold, big_threshold):
         self.root = root
         self.max_depth = max_depth
-        self.hot_threshold = hot_threshold      # 上报阈值
+        self.hot_threshold = hot_threshold  # 上报阈值
         self.big_threshold = big_threshold
 
         self.files = 0
@@ -178,7 +178,7 @@ def _node(path, depth, ctx):
         "d": 0,
         "m": 0,
         "level": info["level"],
-        "cat": info["level"],          # 兼容 1.0 前端字段
+        "cat": info["level"],  # 兼容 1.0 前端字段
         "deletable": info["deletable"],
         "note": info["note"],
         "vendor": info["vendor"],
@@ -345,13 +345,20 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None, ext_owner=Non
                             if mt > agg["max_hm"]:
                                 agg["max_hm"] = mt
                             info = rules.classify(e.path)
-                            ctx.add_big({
-                                "p": e.path, "n": e.name, "s": sz,
-                                "level": info["level"], "cat": info["level"],
-                                "deletable": info["deletable"], "note": info["note"],
-                                "f": 1, "dir": False,
-                                "mtime": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime)),
-                            })
+                            ctx.add_big(
+                                {
+                                    "p": e.path,
+                                    "n": e.name,
+                                    "s": sz,
+                                    "level": info["level"],
+                                    "cat": info["level"],
+                                    "deletable": info["deletable"],
+                                    "note": info["note"],
+                                    "f": 1,
+                                    "dir": False,
+                                    "mtime": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime)),
+                                }
+                            )
                         if local_files >= PROGRESS_BATCH:
                             ctx.add_progress(local_files, local_bytes)
                             local_files = local_bytes = 0
@@ -370,8 +377,9 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None, ext_owner=Non
         node["err"] = "os"
 
     if pending:
-        futures = [executor.submit(walk, p, depth + 1, ctx, pk, mt, None, owner)
-                   for p, mt, pk in pending]
+        futures = [
+            executor.submit(walk, p, depth + 1, ctx, pk, mt, None, owner) for p, mt, pk in pending
+        ]
         for (p, mt, _pk), f in zip(pending, futures):
             try:
                 absorb(f.result(), mt)
@@ -392,13 +400,21 @@ def walk(node_path, depth, ctx, prev=None, mtime=0, executor=None, ext_owner=Non
     # 去重：单个子目录占 75% 以上时只保留子目录，避免父子重复霸榜
     dominated = node["s"] > 0 and (max_child / node["s"]) >= 0.75
     if node["s"] >= HOT_FLOOR and depth >= 2 and not dominated:
-        ctx.add_hot({
-            "p": node_path, "n": node["n"], "s": node["s"],
-            "f": node["f"], "d": node["d"], "mx": max_child,
-            "level": node["level"], "cat": node["level"],
-            "deletable": node["deletable"], "note": node["note"],
-            "err": node["err"],
-        })
+        ctx.add_hot(
+            {
+                "p": node_path,
+                "n": node["n"],
+                "s": node["s"],
+                "f": node["f"],
+                "d": node["d"],
+                "mx": max_child,
+                "level": node["level"],
+                "cat": node["level"],
+                "deletable": node["deletable"],
+                "note": node["note"],
+                "err": node["err"],
+            }
+        )
     return node
 
 
@@ -422,14 +438,15 @@ def ext_summary(ext_map, approx=False, partial=False):
     items = []
     for ext, g in (ext_map or {}).items():
         dirs = sorted((g.get("dirs") or {}).items(), key=lambda kv: -kv[1][0])
-        items.append({
-            "ext": ext,
-            "s": int(g.get("s") or 0),
-            "f": int(g.get("f") or 0),
-            "dirs": [{"p": p, "s": int(v[0]), "f": int(v[1])}
-                     for p, v in dirs[:EXT_DIR_SHOW]],
-            "otherDirs": max(0, len(dirs) - EXT_DIR_SHOW),
-        })
+        items.append(
+            {
+                "ext": ext,
+                "s": int(g.get("s") or 0),
+                "f": int(g.get("f") or 0),
+                "dirs": [{"p": p, "s": int(v[0]), "f": int(v[1])} for p, v in dirs[:EXT_DIR_SHOW]],
+                "otherDirs": max(0, len(dirs) - EXT_DIR_SHOW),
+            }
+        )
     items.sort(key=lambda x: (-x["s"], x["ext"]))
     total = sum(x["s"] for x in items)
     shown = items[:EXT_SHOW]
@@ -448,8 +465,9 @@ def ext_summary(ext_map, approx=False, partial=False):
     }
 
 
-def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
-             fresh=False, cache_dir=None):
+def run_scan(
+    root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None, fresh=False, cache_dir=None
+):
     """执行一次扫描。on_begin/on_finish 用于与 server 解耦。
 
     fresh=True 强制全量；cache_dir 为空则不做快照（等价于永远全量）。
@@ -477,9 +495,20 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
         tops.sort()
 
         root_node = {
-            "n": os.path.basename(root) or root, "p": root, "s": 0, "f": 0, "d": 0,
-            "m": 0, "hm": 0, "level": "data", "cat": "data", "deletable": True, "note": "",
-            "vendor": "", "kids": [], "err": None,
+            "n": os.path.basename(root) or root,
+            "p": root,
+            "s": 0,
+            "f": 0,
+            "d": 0,
+            "m": 0,
+            "hm": 0,
+            "level": "data",
+            "cat": "data",
+            "deletable": True,
+            "note": "",
+            "vendor": "",
+            "kids": [],
+            "err": None,
         }
         lock = threading.Lock()
         prev_kids = _prev_kids((ctx.prev or {}).get("tree"))
@@ -514,19 +543,23 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
         _replay(ctx, (ctx.prev or {}).get("big"), ctx.add_big, seen_big, BIG_FLOOR)
 
         root_node["kids"].sort(key=lambda x: -x["s"])
-        hot = heapq.nlargest(HOT_SHOW, [h for h in ctx.hot if h["s"] >= ctx.hot_threshold],
-                             key=lambda x: x["s"])
-        big = heapq.nlargest(BIG_SHOW, [b for b in ctx.big if b["s"] >= ctx.big_threshold],
-                             key=lambda x: x["s"])
+        hot = heapq.nlargest(
+            HOT_SHOW, [h for h in ctx.hot if h["s"] >= ctx.hot_threshold], key=lambda x: x["s"]
+        )
+        big = heapq.nlargest(
+            BIG_SHOW, [b for b in ctx.big if b["s"] >= ctx.big_threshold], key=lambda x: x["s"]
+        )
 
         # R3：旧树与新树按规范化路径对齐，不新增任何磁盘 IO。
         diff_data = None
         if baseline and baseline.get("tree"):
             try:
                 diff_data = snapshot.compare(
-                    baseline["tree"], root_node,
+                    baseline["tree"],
+                    root_node,
                     approx=bool(ctx.reused_keys),
-                    baseline_at=baseline.get("createdAt"))
+                    baseline_at=baseline.get("createdAt"),
+                )
             except Exception:
                 diff_data = None
 
@@ -537,8 +570,9 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
         if ctx.reused_keys and baseline_ext:
             ext_data = dict(baseline_ext, approx=True, partial=False)
         else:
-            ext_data = ext_summary(ctx.ext, approx=bool(ctx.reused_keys),
-                                   partial=bool(ctx.reused_keys))
+            ext_data = ext_summary(
+                ctx.ext, approx=bool(ctx.reused_keys), partial=bool(ctx.reused_keys)
+            )
 
         ctx.elapsed = round(time.time() - ctx.start, 1)
         ctx.phase = "完成"
@@ -548,8 +582,15 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
         if cache_dir:
             # 强制全量时也要写快照：否则「全量一次」等于白白丢掉缓存
             saved, saved_bytes, degraded = snapshot.save(
-                cache_dir, root, root_node, list(ctx.hot), list(ctx.big),
-                max_depth, ctx.elapsed, ext=ext_data)
+                cache_dir,
+                root,
+                root_node,
+                list(ctx.hot),
+                list(ctx.big),
+                max_depth,
+                ctx.elapsed,
+                ext=ext_data,
+            )
 
         result = {
             "root": root,
@@ -575,12 +616,21 @@ def run_scan(root, max_depth, hot_mb, big_mb, on_begin=None, on_finish=None,
             },
             "snapshot": {"saved": saved, "bytes": saved_bytes, "degraded": degraded},
             "truncated": {
-                "hot": {"shown": len(hot), "total": ctx.total_hot,
-                        "truncated": ctx.total_hot > len(hot)},
-                "big": {"shown": len(big), "total": ctx.total_big,
-                        "truncated": ctx.total_big > len(big)},
-                "errors": {"shown": len(ctx.errors[:200]), "total": ctx.error_total,
-                           "truncated": ctx.error_total > 200},
+                "hot": {
+                    "shown": len(hot),
+                    "total": ctx.total_hot,
+                    "truncated": ctx.total_hot > len(hot),
+                },
+                "big": {
+                    "shown": len(big),
+                    "total": ctx.total_big,
+                    "truncated": ctx.total_big > len(big),
+                },
+                "errors": {
+                    "shown": len(ctx.errors[:200]),
+                    "total": ctx.error_total,
+                    "truncated": ctx.error_total > 200,
+                },
             },
         }
         if on_finish:
@@ -644,24 +694,47 @@ def list_dir(path, size_index=None, budget_ms=1500):
                             else:
                                 timed_out = True
                                 size = None
-                        items.append({
-                            "n": e.name, "p": e.path, "s": size, "dir": True,
-                            "level": info["level"], "cat": info["level"],
-                            "deletable": info["deletable"], "note": info["note"],
-                        })
+                        items.append(
+                            {
+                                "n": e.name,
+                                "p": e.path,
+                                "s": size,
+                                "dir": True,
+                                "level": info["level"],
+                                "cat": info["level"],
+                                "deletable": info["deletable"],
+                                "note": info["note"],
+                            }
+                        )
                     else:
                         st = e.stat(follow_symlinks=False)
-                        items.append({
-                            "n": e.name, "p": e.path, "s": st.st_size, "dir": False,
-                            "mtime": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime)),
-                            "level": info["level"], "cat": info["level"],
-                            "deletable": info["deletable"], "note": info["note"],
-                        })
+                        items.append(
+                            {
+                                "n": e.name,
+                                "p": e.path,
+                                "s": st.st_size,
+                                "dir": False,
+                                "mtime": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime)),
+                                "level": info["level"],
+                                "cat": info["level"],
+                                "deletable": info["deletable"],
+                                "note": info["note"],
+                            }
+                        )
                 except PermissionError:
-                    items.append({"n": e.name, "p": e.path, "s": None, "dir": True,
-                                  "level": "protected", "cat": "protected",
-                                  "deletable": False, "note": "无权限访问",
-                                  "err": "无权限"})
+                    items.append(
+                        {
+                            "n": e.name,
+                            "p": e.path,
+                            "s": None,
+                            "dir": True,
+                            "level": "protected",
+                            "cat": "protected",
+                            "deletable": False,
+                            "note": "无权限访问",
+                            "err": "无权限",
+                        }
+                    )
                 except OSError:
                     continue
     except PermissionError:

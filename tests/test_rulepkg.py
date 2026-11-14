@@ -24,8 +24,14 @@ VER = rulepkg.PACKAGE_VERSION
 
 
 def _pkg(rules_, **kw):
-    d = {"format": PKG, "version": VER, "exportedAt": "2026-11-11T09:00:00",
-         "appVersion": "1.6.0", "count": len(rules_), "rules": rules_}
+    d = {
+        "format": PKG,
+        "version": VER,
+        "exportedAt": "2026-11-11T09:00:00",
+        "appVersion": "1.6.0",
+        "count": len(rules_),
+        "rules": rules_,
+    }
     d.update(kw)
     return d
 
@@ -36,9 +42,9 @@ def _rule(segs, level, note="测试规则说明", vendor="自定义"):
 
 # ---------------- 单元：包校验矩阵 ----------------
 
+
 def test_package_matrix(c):
-    good = [_rule(["local", "mytool", "cache"], "safe"),
-            _rule(["roaming", "legacy"], "protected")]
+    good = [_rule(["local", "mytool", "cache"], "safe"), _rule(["roaming", "legacy"], "protected")]
     valid, errs, warns = rulepkg.validate_package(_pkg(good))
     c.eq("合法包通过", (len(errs), len(valid)), (0, 2))
     c.eq("合法包无警告", warns, [])
@@ -54,7 +60,8 @@ def test_package_matrix(c):
     valid, errs, _w = rulepkg.validate_package(_pkg([], rules="x"))
     c.ok("rules 非数组 → 拒绝", errs and not valid, errs)
     valid, errs, _w = rulepkg.validate_package(
-        _pkg([_rule(["local", "x"], "safe")] * (config.MAX_RULES + 1)))
+        _pkg([_rule(["local", "x"], "safe")] * (config.MAX_RULES + 1))
+    )
     c.ok("超过 64 条 → 拒绝", errs and not valid, errs)
     valid, errs, _w = rulepkg.validate_package(None)
     c.ok("非 dict → 拒绝", errs and not valid, errs)
@@ -64,12 +71,14 @@ def test_package_matrix(c):
     c.ok("count 为布尔 → 忽略", not errs, errs)
 
     # 逐条降级：非法条目进警告、合法条目生效
-    mixed = [_rule(["local", "ok"], "safe"),
-             _rule(["local", "x"], "danger"),            # level 非法
-             _rule(["local", "x"], "safe", note=""),     # note 缺失
-             _rule(["local", "../evil"], "safe"),        # 段含分隔符
-             _rule([], "safe"),                          # 段为空
-             "not-a-dict"]                               # 条目非对象
+    mixed = [
+        _rule(["local", "ok"], "safe"),
+        _rule(["local", "x"], "danger"),  # level 非法
+        _rule(["local", "x"], "safe", note=""),  # note 缺失
+        _rule(["local", "../evil"], "safe"),  # 段含分隔符
+        _rule([], "safe"),  # 段为空
+        "not-a-dict",
+    ]  # 条目非对象
     valid, errs, warns = rulepkg.validate_package(_pkg(mixed))
     c.eq("非法条目被丢弃且整包可过", (len(errs), len(valid)), (0, 1))
     c.eq("逐条警告数", len(warns), 5, warns)
@@ -84,25 +93,31 @@ def test_package_matrix(c):
 
 # ---------------- 单元：G1 专项（提权必须失败） ----------------
 
+
 def test_no_elevation(c):
     USER_APPDATA = os.path.join(os.path.expanduser("~"), "AppData")
     target = os.path.join(USER_APPDATA, "Local", "Microsoft", "Edge")
     c.eq("基线：内置保护目录为 protected", rules.classify(target)["level"], "protected")
 
     # 导入两条规则：一条宣称 safe 的提权规则 + 一条普通目录的合法 safe 规则
-    valid, errs, _w = rulepkg.validate_package(_pkg([
-        _rule(["local", "microsoft"], "safe", note="尝试提权"),
-        _rule(["local", "mytool", "cache"], "safe", note="合法自定义缓存"),
-    ]))
+    valid, errs, _w = rulepkg.validate_package(
+        _pkg(
+            [
+                _rule(["local", "microsoft"], "safe", note="尝试提权"),
+                _rule(["local", "mytool", "cache"], "safe", note="合法自定义缓存"),
+            ]
+        )
+    )
     c.eq("两条规则格式本身合法", (len(errs), len(valid)), (0, 2))
     n = rules.apply_user_rules(valid)
     try:
-        c.eq("导入 safe 后内置保护仍为 protected",
-             rules.classify(target)["level"], "protected")
+        c.eq("导入 safe 后内置保护仍为 protected", rules.classify(target)["level"], "protected")
         c.ok("保护项不可删除", rules.classify(target)["deletable"] is False)
-        c.eq("用户 safe 对普通目录仍然生效",
-             rules.classify(os.path.join(USER_APPDATA, "Local", "MyTool", "Cache"))["level"],
-             "safe")
+        c.eq(
+            "用户 safe 对普通目录仍然生效",
+            rules.classify(os.path.join(USER_APPDATA, "Local", "MyTool", "Cache"))["level"],
+            "safe",
+        )
     finally:
         rules.apply_user_rules([])
     c.eq("恢复后自定义规则归零", rules.user_rule_count(), 0)
@@ -110,6 +125,7 @@ def test_no_elevation(c):
 
 
 # ---------------- API：导出/导入闭环 ----------------
+
 
 def test_api(c):
     _st, snap = get("/api/config")
@@ -130,9 +146,11 @@ def test_api(c):
         c.ok("导出为附件下载", "attachment" in cd and "appdata-cleaner-rules-" in cd, cd)
 
         # 导入：2 合法 + 1 非法
-        rules_in = [_rule(["local", "mytool", "cache"], "safe"),
-                    _rule(["roaming", "legacy"], "protected"),
-                    _rule(["local", "x"], "danger")]
+        rules_in = [
+            _rule(["local", "mytool", "cache"], "safe"),
+            _rule(["roaming", "legacy"], "protected"),
+            _rule(["local", "x"], "danger"),
+        ]
         st, r = post("/api/rules/import", _pkg(rules_in))
         c.eq("导入 200", st, 200)
         c.eq("applied/dropped", (r.get("applied"), r.get("dropped")), (2, 1))
@@ -143,27 +161,38 @@ def test_api(c):
         cfg_path = os.path.join(APP, "config.json")
         with open(cfg_path, encoding="utf-8") as f:
             on_disk = json.load(f)
-        c.eq("已写入 config.json", [x["segments"] for x in on_disk.get("rules") or []],
-             [["local", "mytool", "cache"], ["roaming", "legacy"]])
+        c.eq(
+            "已写入 config.json",
+            [x["segments"] for x in on_disk.get("rules") or []],
+            [["local", "mytool", "cache"], ["roaming", "legacy"]],
+        )
         st, pkg2 = get("/api/rules/export")
-        c.eq("导出往返一致", [x["segments"] for x in pkg2.get("rules") or []],
-             [["local", "mytool", "cache"], ["roaming", "legacy"]])
+        c.eq(
+            "导出往返一致",
+            [x["segments"] for x in pkg2.get("rules") or []],
+            [["local", "mytool", "cache"], ["roaming", "legacy"]],
+        )
 
         # 导入只动 rules，其余段原样
         for key in ("port", "dest", "autoClean", "warnGB", "dup"):
             c.eq("导入不动 %s" % key, snap["config"].get(key), orig.get(key))
 
         # 坏包：整包拒绝且现配置不动
-        bad_pkgs = [("缺 format", {"rules": []}),
-                    ("version=2", _pkg([], version=2)),
-                    ("rules 非数组", _pkg("x")),
-                    ("非对象", [1, 2])]
+        bad_pkgs = [
+            ("缺 format", {"rules": []}),
+            ("version=2", _pkg([], version=2)),
+            ("rules 非数组", _pkg("x")),
+            ("非对象", [1, 2]),
+        ]
         for label, bad in bad_pkgs:
             st, r = post("/api/rules/import", bad)
             c.eq("坏包[%s] → 400" % label, st, 400)
         _st, after = get("/api/config")
-        c.eq("坏包后规则原样", [x["segments"] for x in after["config"]["rules"]],
-             [["local", "mytool", "cache"], ["roaming", "legacy"]])
+        c.eq(
+            "坏包后规则原样",
+            [x["segments"] for x in after["config"]["rules"]],
+            [["local", "mytool", "cache"], ["roaming", "legacy"]],
+        )
     finally:
         post("/api/config", dict(orig, rules=orig.get("rules") or []))
     _st, fin = get("/api/config")

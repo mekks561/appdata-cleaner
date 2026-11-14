@@ -62,6 +62,7 @@ def cfg_ac(**kw):
 
 # ---------------- 单元：守门矩阵 ----------------
 
+
 def test_gates(c):
     due = lambda *a, **k: autoclean.is_due(*a, **k)  # noqa: E731
 
@@ -81,8 +82,7 @@ def test_gates(c):
     d, r = due(cfg_ac(), None, NOW - 8 * 86400)
     c.eq("扫描超 7 天 → stale（宁可不清）", (d, r), (False, "stale"))
     d, r = due(cfg_ac(), None, NOW - 7 * 86400 + 60)
-    c.ok("扫描刚好 7 天内 → 新鲜度不拦（not-time 或 due）",
-         r in ("not-time", "due"), r)
+    c.ok("扫描刚好 7 天内 → 新鲜度不拦（not-time 或 due）", r in ("not-time", "due"), r)
 
     lt = time.localtime(NOW)
     if 13 <= lt.tm_hour <= 22:
@@ -140,6 +140,7 @@ def test_maybe_run(c):
 
 # ---------------- 单元：调度异常可见化（1.5） ----------------
 
+
 def test_scheduler_error(c):
     cfg = cfg_ac(hour=0)
 
@@ -154,8 +155,7 @@ def test_scheduler_error(c):
     c.ok("last_error.message 保留", "注入失败" in sched.last_error.get("message", ""))
     c.ok("snapshot.lastError 可披露", bool(sched.snapshot().get("lastError")))
 
-    sched2 = autoclean.Scheduler(lambda: cfg_ac(enabled=False), lambda: None,
-                                 lambda: NOW, boom)
+    sched2 = autoclean.Scheduler(lambda: cfg_ac(enabled=False), lambda: None, lambda: NOW, boom)
     r2 = sched2.step()
     c.eq("正常 step 不调用 run_fn", r2.get("reason"), "disabled", r2)
     c.ok("正常 step 无 last_error", sched2.last_error is None)
@@ -163,28 +163,37 @@ def test_scheduler_error(c):
 
 # ---------------- 单元：config 校验 ----------------
 
+
 def test_config(c):
     cfg, _e, _w = config.validate({})
-    c.eq("缺省 autoClean → 默认关闭", (cfg["autoClean"]["enabled"],
-                                       cfg["autoClean"]["interval"],
-                                       cfg["autoClean"]["hour"]),
-         (False, "daily", 12))
+    c.eq(
+        "缺省 autoClean → 默认关闭",
+        (cfg["autoClean"]["enabled"], cfg["autoClean"]["interval"], cfg["autoClean"]["hour"]),
+        (False, "daily", 12),
+    )
     cfg, errors, _w = config.validate({"autoClean": {"enabled": "yes"}})
-    c.ok("enabled 非布尔 → 整段回退默认（关闭）",
-         errors and cfg["autoClean"] == config.DEFAULTS["autoClean"], errors)
+    c.ok(
+        "enabled 非布尔 → 整段回退默认（关闭）",
+        errors and cfg["autoClean"] == config.DEFAULTS["autoClean"],
+        errors,
+    )
     cfg, errors, _w = config.validate({"autoClean": {"interval": "hourly"}})
     c.ok("interval 非法 → 报错回退", errors and not cfg["autoClean"]["enabled"], errors)
     cfg, errors, _w = config.validate({"autoClean": {"hour": 24}})
     c.ok("hour=24 → 报错回退", bool(errors), errors)
     cfg, errors, _w = config.validate(
-        {"autoClean": {"enabled": True, "interval": "weekly", "hour": 22}})
-    c.eq("合法值 roundtrip", (cfg["autoClean"]["enabled"],
-                              cfg["autoClean"]["interval"],
-                              cfg["autoClean"]["hour"]), (True, "weekly", 22))
+        {"autoClean": {"enabled": True, "interval": "weekly", "hour": 22}}
+    )
+    c.eq(
+        "合法值 roundtrip",
+        (cfg["autoClean"]["enabled"], cfg["autoClean"]["interval"], cfg["autoClean"]["hour"]),
+        (True, "weekly", 22),
+    )
     c.eq("合法值无错误", errors, [])
 
 
 # ---------------- API 闭环 ----------------
+
 
 def test_api(c):
     st, s = get("/api/auto/status")
@@ -194,17 +203,20 @@ def test_api(c):
     c.ok("默认无 lastError", s.get("lastError") is None, s)
 
     st, r = post("/api/auto/check", {})
-    c.eq("未启用时 check → 不执行", (st, r.get("ran"), r.get("reason")),
-         (200, False, "disabled"))
+    c.eq("未启用时 check → 不执行", (st, r.get("ran"), r.get("reason")), (200, False, "disabled"))
 
     # —— 1.5：执行失败可见。有扫描结果但无 safe 项时，
     #    run_oneclick 返回错误，_auto_run_fn 写历史 error，状态行可披露 ——
     _drop_auto_history()
-    st, _b = post("/api/config", {
-        "port": 8765, "dest": "D:\\AppDataBackup",
-        "autoClean": {"enabled": True, "interval": "daily", "hour": 0},
-        "rules": [],
-    })
+    st, _b = post(
+        "/api/config",
+        {
+            "port": 8765,
+            "dest": "D:\\AppDataBackup",
+            "autoClean": {"enabled": True, "interval": "daily", "hour": 0},
+            "rules": [],
+        },
+    )
     c.eq("开启自动清理 → 保存 200", st, 200, _b)
     empty_dir = os.path.join(ROOT, "_auto_empty")
     os.makedirs(empty_dir, exist_ok=True)
@@ -220,18 +232,22 @@ def test_api(c):
 
     # 开启（hour=0 保证到点）并准备新鲜扫描
     _cfg, _w = None, None
-    st, body = post("/api/config", {
-        "port": 8765, "dest": "D:\\AppDataBackup",
-        "autoClean": {"enabled": True, "interval": "daily", "hour": 0},
-        "rules": [],
-    })
+    st, body = post(
+        "/api/config",
+        {
+            "port": 8765,
+            "dest": "D:\\AppDataBackup",
+            "autoClean": {"enabled": True, "interval": "daily", "hour": 0},
+            "rules": [],
+        },
+    )
     c.eq("开启自动清理 → 保存 200", st, 200, body)
 
     st, s = get("/api/auto/status")
     c.eq("status 反映已启用", s.get("enabled"), True)
     c.eq("nextRun 已给出", isinstance(s.get("nextRun"), int), True, s)
 
-    cache = os.path.join(ROOT, "Local", "Temp")     # 命中内置 safe 规则
+    cache = os.path.join(ROOT, "Local", "Temp")  # 命中内置 safe 规则
     suspect = os.path.join(ROOT, "Local", "FakeApp", "Cache")  # 启发式 suspect，绝不清
     data_file = os.path.join(ROOT, "Local", "FakeApp", "Data", "db.sqlite")
     other = os.path.join(ROOT, "Roaming", "OtherApp", "settings.json")
@@ -256,8 +272,7 @@ def test_api(c):
 
     # 幂等：同周期再 check → already
     st, r2 = post("/api/auto/check", {})
-    c.eq("第二次 check → already", (r2.get("ran"), r2.get("reason")),
-         (False, "already"), r2)
+    c.eq("第二次 check → already", (r2.get("ran"), r2.get("reason")), (False, "already"), r2)
 
     # 历史与状态披露
     st, hist = get("/api/history?limit=20")
@@ -268,18 +283,27 @@ def test_api(c):
     c.ok("lastRun.freed > 0", (s.get("lastRun") or {}).get("freed", 0) > 0)
 
     # 关闭后再 check → disabled
-    st, _b = post("/api/config", {
-        "port": 8765, "dest": "D:\\AppDataBackup",
-        "autoClean": {"enabled": False, "interval": "daily", "hour": 12},
-        "rules": [],
-    })
+    st, _b = post(
+        "/api/config",
+        {
+            "port": 8765,
+            "dest": "D:\\AppDataBackup",
+            "autoClean": {"enabled": False, "interval": "daily", "hour": 12},
+            "rules": [],
+        },
+    )
     st, r = post("/api/auto/check", {})
     c.eq("关闭后 check → disabled", r.get("reason"), "disabled", r)
 
     # 还原演示用的测试配置文件为默认（不留 enabled 状态在仓库运行目录）
-    st, _b = post("/api/config", {
-        "port": 8765, "dest": "D:\\AppDataBackup", "rules": [],
-    })
+    st, _b = post(
+        "/api/config",
+        {
+            "port": 8765,
+            "dest": "D:\\AppDataBackup",
+            "rules": [],
+        },
+    )
 
 
 def run():

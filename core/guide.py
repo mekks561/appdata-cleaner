@@ -13,12 +13,18 @@ MAX_PATH_LEN = 4096
 
 # 官方链接白名单：前端只渲染这里给出的 URL，不自行拼接任何用户输入
 _LINKS = [
-    {"title": "获取文件或文件夹的所有权（微软官方支持文档）",
-     "url": "https://support.microsoft.com/zh-cn/kb/308421"},
-    {"title": "takeown 命令参考（Microsoft Learn）",
-     "url": "https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/takeown"},
-    {"title": "icacls 命令参考（Microsoft Learn）",
-     "url": "https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/icacls"},
+    {
+        "title": "获取文件或文件夹的所有权（微软官方支持文档）",
+        "url": "https://support.microsoft.com/zh-cn/kb/308421",
+    },
+    {
+        "title": "takeown 命令参考（Microsoft Learn）",
+        "url": "https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/takeown",
+    },
+    {
+        "title": "icacls 命令参考（Microsoft Learn）",
+        "url": "https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/icacls",
+    },
 ]
 
 # 通用 NTFS 权限操作步骤（Win10/11 通用）
@@ -30,8 +36,10 @@ _STEPS = [
     "完成后回到本工具重新扫描，分类结果会随权限更新。",
 ]
 
-_DISCLAIMER = ("请先确认目录确实不再被系统或对应程序需要，再手动调整权限；"
-               "本工具只提供说明与官方文档链接，不代为修改任何权限。")
+_DISCLAIMER = (
+    "请先确认目录确实不再被系统或对应程序需要，再手动调整权限；"
+    "本工具只提供说明与官方文档链接，不代为修改任何权限。"
+)
 
 
 def _rule_info(path):
@@ -50,13 +58,16 @@ def build_guide(path=None):
     返回 (status_code, body)。400 仅在 path 类型非法/超长时出现。
     """
     if path is None or path == "":
-        return 200, {"protected": False, "steps": _STEPS,
-                     "links": _LINKS, "disclaimer": _DISCLAIMER}
+        return 200, {
+            "protected": False,
+            "steps": _STEPS,
+            "links": _LINKS,
+            "disclaimer": _DISCLAIMER,
+        }
     if not isinstance(path, str) or len(path) > MAX_PATH_LEN:
         return 400, {"error": "path 必须是不超过 %d 字符的字符串" % MAX_PATH_LEN}
     info = _rule_info(path)
-    body = {"protected": False, "steps": _STEPS,
-            "links": _LINKS, "disclaimer": _DISCLAIMER}
+    body = {"protected": False, "steps": _STEPS, "links": _LINKS, "disclaimer": _DISCLAIMER}
     if info is not None:
         body["protected"] = True
         body["rule"] = info.get("rule", "")

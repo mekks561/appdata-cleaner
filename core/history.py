@@ -18,7 +18,7 @@ import time
 
 MANIFEST_RE = re.compile(r"^manifest-\d{8}-\d{6}-[0-9a-f]{6}\.json$")
 HISTORY_RE = re.compile(r"^clean-\d{8}\.jsonl$")
-ITEM_KEEP = 80          # 单条记录里最多保留的明细条数
+ITEM_KEEP = 80  # 单条记录里最多保留的明细条数
 
 
 def _day(ts=None):
@@ -103,7 +103,7 @@ def trend(log_dir, days=30):
             day_ts = time.mktime(time.strptime(n[6:14], "%Y%m%d"))
         except ValueError:
             continue
-        if day_ts < cutoff - 86400:      # 文件可能跨窗口边界（当天的记录），放宽一天
+        if day_ts < cutoff - 86400:  # 文件可能跨窗口边界（当天的记录），放宽一天
             continue
         try:
             with open(os.path.join(log_dir, n), "r", encoding="utf-8") as f:
@@ -132,14 +132,19 @@ def trend(log_dir, days=30):
         ts = time.time() - i * 86400
         d = time.strftime("%Y%m%d", time.localtime(ts))
         cell = per_day.get(d, {"ops": 0, "ok": 0, "freed": 0})
-        out.append({
-            "date": time.strftime("%m-%d", time.localtime(ts)),
-            "ops": cell["ops"], "ok": cell["ok"], "freed": cell["freed"],
-        })
+        out.append(
+            {
+                "date": time.strftime("%m-%d", time.localtime(ts)),
+                "ops": cell["ops"],
+                "ok": cell["ok"],
+                "freed": cell["freed"],
+            }
+        )
     return out
 
 
 # ---------------- manifest ----------------
+
 
 def new_manifest(log_dir, items, root, extra=None):
     """写一份移动清单，返回 manifestId。items = [{from,to,size}]。"""
@@ -185,8 +190,9 @@ def prune_manifests(log_dir, keep=40):
         names = [n for n in os.listdir(log_dir) if MANIFEST_RE.match(n)]
         if len(names) <= keep:
             return
-        files = sorted(((os.path.getmtime(os.path.join(log_dir, n)), n) for n in names),
-                       reverse=True)
+        files = sorted(
+            ((os.path.getmtime(os.path.join(log_dir, n)), n) for n in names), reverse=True
+        )
         for _t, n in files[keep:]:
             try:
                 os.remove(os.path.join(log_dir, n))

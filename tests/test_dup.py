@@ -46,6 +46,7 @@ def build_samples():
     if os.path.isdir(BASE):
         shutil.rmtree(BASE, ignore_errors=True)
     big = 300 * KB
+
     def p(*a):
         return os.path.join(BASE, *a)
 
@@ -53,8 +54,8 @@ def build_samples():
     _write(p("Local", "FakeDup", "a1.bin"), big, b"A")
     _write(p("Local", "FakeDup", "sub", "a2.bin"), big, b"A")
     now = time.time()
-    _touch(p("Local", "FakeDup", "a1.bin"), now - 86400)   # 旧
-    _touch(p("Local", "FakeDup", "sub", "a2.bin"), now)    # 新 → 应被建议保留
+    _touch(p("Local", "FakeDup", "a1.bin"), now - 86400)  # 旧
+    _touch(p("Local", "FakeDup", "sub", "a2.bin"), now)  # 新 → 应被建议保留
 
     # 2) 同大小不同内容，头尾相同、中段不同（最狠的误报陷阱）
     head, tail = b"H" * (64 * KB), b"T" * (64 * KB)
@@ -119,26 +120,41 @@ def run():
 
     c.eq("只成 2 组（同内容 A 组 + 三份 C 组）", len(groups), 2)
     g_a = next((g for g in groups if g["count"] == 2), None)
-    c.ok("同内容不同名成组", g_a is not None and
-         {cp["p"] for cp in g_a["copies"]} == {s["a1"], s["a2"]},
-         [g["count"] for g in groups])
-    c.ok("保留建议 = 最新修改的那份", g_a and g_a["keepSuggestion"] == s["a2"],
-         g_a and g_a["keepSuggestion"])
+    c.ok(
+        "同内容不同名成组",
+        g_a is not None and {cp["p"] for cp in g_a["copies"]} == {s["a1"], s["a2"]},
+        [g["count"] for g in groups],
+    )
+    c.ok(
+        "保留建议 = 最新修改的那份",
+        g_a and g_a["keepSuggestion"] == s["a2"],
+        g_a and g_a["keepSuggestion"],
+    )
     c.ok("保留标记只有一份", g_a and sum(1 for cp in g_a["copies"] if cp["keep"]) == 1)
-    c.ok("可回收量 = size × (n-1)",
-         g_a and g_a["reclaimable"] == g_a["size"] * (g_a["count"] - 1),
-         g_a and (g_a["reclaimable"], g_a["size"]))
+    c.ok(
+        "可回收量 = size × (n-1)",
+        g_a and g_a["reclaimable"] == g_a["size"] * (g_a["count"] - 1),
+        g_a and (g_a["reclaimable"], g_a["size"]),
+    )
 
-    c.ok("头尾相同但中段不同 → 0 误报（硬指标）",
-         s["b1"] not in all_paths and s["b2"] not in all_paths, sorted(all_paths))
+    c.ok(
+        "头尾相同但中段不同 → 0 误报（硬指标）",
+        s["b1"] not in all_paths and s["b2"] not in all_paths,
+        sorted(all_paths),
+    )
     c.ok("protected 子树不参与", s["pkg"] not in all_paths, sorted(all_paths))
     c.ok("小于阈值不参与", s["s1"] not in all_paths, sorted(all_paths))
     c.ok("硬链接被计入跳过", res["skipped"]["hardlink"] >= 1, res["skipped"])
-    c.ok("三份同内容 → 一组三份",
-         any(g["count"] == 3 and {cp["p"] for cp in g["copies"]} == set(s["c"])
-             for g in groups), [(g["count"], len(g["copies"])) for g in groups])
-    c.ok("skipped 字段齐备",
-         {"cloud", "hardlink", "reparse", "denied"} <= set(res["skipped"]), res["skipped"])
+    c.ok(
+        "三份同内容 → 一组三份",
+        any(g["count"] == 3 and {cp["p"] for cp in g["copies"]} == set(s["c"]) for g in groups),
+        [(g["count"], len(g["copies"])) for g in groups],
+    )
+    c.ok(
+        "skipped 字段齐备",
+        {"cloud", "hardlink", "reparse", "denied"} <= set(res["skipped"]),
+        res["skipped"],
+    )
 
     # 预算为 0 → 立刻 partial，不崩溃
     res0 = dupfind.find_duplicates(s["root"], min_size=100 * KB, budget_sec=0)
@@ -163,12 +179,16 @@ def run():
     dres = _dup_scan()
     api_groups = dres.get("groups") or []
     api_paths = {cp["p"] for g in api_groups for cp in g["copies"]}
-    c.ok("接口结果含 a1/a2", {os.path.join(dup_root, "a1.bin"),
-                            os.path.join(dup_root, "sub", "a2.bin")} <= api_paths,
-         sorted(api_paths))
-    c.ok("接口结果不含 b1/b2（0 误报）",
-         not any(p.lower().endswith("b1.bin") or p.lower().endswith("b2.bin")
-                 for p in api_paths), sorted(api_paths))
+    c.ok(
+        "接口结果含 a1/a2",
+        {os.path.join(dup_root, "a1.bin"), os.path.join(dup_root, "sub", "a2.bin")} <= api_paths,
+        sorted(api_paths),
+    )
+    c.ok(
+        "接口结果不含 b1/b2（0 误报）",
+        not any(p.lower().endswith("b1.bin") or p.lower().endswith("b2.bin") for p in api_paths),
+        sorted(api_paths),
+    )
     c.ok("接口 partial 字段存在", "partial" in dres, list(dres))
 
     # 清理校验：空组 / 非法策略
@@ -185,9 +205,11 @@ def run():
         c.eq("清理 200", st, 200)
         keep = max(g["copies"], key=lambda x: x["m"])["p"]
         c.ok("每组保留一份不动", os.path.exists(keep), keep)
-        c.ok("其余进入回收站（已不在原位）",
-             all(not os.path.exists(cp["p"]) for cp in g["copies"] if cp["p"] != keep),
-             [(cp["p"], os.path.exists(cp["p"])) for cp in g["copies"]])
+        c.ok(
+            "其余进入回收站（已不在原位）",
+            all(not os.path.exists(cp["p"]) for cp in g["copies"] if cp["p"] != keep),
+            [(cp["p"], os.path.exists(cp["p"])) for cp in g["copies"]],
+        )
         c.ok("清理结果有成功项", cr.get("okCount", 0) >= 1, cr.get("results"))
         c.ok("不提供撤销（回收站还原）", cr.get("undoable") is False)
     else:
@@ -198,11 +220,16 @@ def run():
     left = {cp["p"] for g in (dres2.get("groups") or []) for cp in g["copies"]}
     if len(api_groups) >= 1:
         cleaned = {cp["p"] for cp in api_groups[0]["copies"]} - left
-        c.ok("已清理的项不再出现在重复组里", len(cleaned) >= 1,
-             sorted({cp["p"] for cp in api_groups[0]["copies"]} & left))
-        c.ok("保留那份仍在", len(cleaned) < len(api_groups[0]["copies"]) or
-             api_groups[0]["count"] == len(cleaned),
-             (api_groups[0]["count"], len(cleaned)))
+        c.ok(
+            "已清理的项不再出现在重复组里",
+            len(cleaned) >= 1,
+            sorted({cp["p"] for cp in api_groups[0]["copies"]} & left),
+        )
+        c.ok(
+            "保留那份仍在",
+            len(cleaned) < len(api_groups[0]["copies"]) or api_groups[0]["count"] == len(cleaned),
+            (api_groups[0]["count"], len(cleaned)),
+        )
 
     shutil.rmtree(BASE, ignore_errors=True)
     return c.report()

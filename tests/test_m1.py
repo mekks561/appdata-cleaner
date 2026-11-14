@@ -21,8 +21,11 @@ def run():
     # —— /api/config 读写 ——
     st, cfg = get("/api/config")
     c.eq("GET /api/config 200", st, 200)
-    c.ok("含 port 字段", isinstance(cfg.get("config", {}).get("port"), int),
-         cfg.get("config", {}).get("port"))
+    c.ok(
+        "含 port 字段",
+        isinstance(cfg.get("config", {}).get("port"), int),
+        cfg.get("config", {}).get("port"),
+    )
     c.ok("含 rules 数组", isinstance(cfg.get("config", {}).get("rules"), list))
     orig_port = cfg["config"]["port"]
     # 以「服务实际监听端口」为准：测试可能用 APP_PORT 覆盖配置端口
@@ -31,17 +34,27 @@ def run():
 
     st, body = post("/api/config", {"port": 80})
     c.eq("非法端口被拒 400", st, 400)
-    st, body = post("/api/config",
-                    {"rules": [{"segments": ["local"], "level": "safe", "note": ""}]})
+    st, body = post(
+        "/api/config", {"rules": [{"segments": ["local"], "level": "safe", "note": ""}]}
+    )
     c.eq("空 note 规则被拒", st, 400)
     c.ok("拒绝时给出明细", isinstance(body.get("details"), list) and body["details"], body)
 
     # 合法保存（端口不变，避免污染下次测试）
-    st, body = post("/api/config", {
-        "port": run_port, "dest": r"D:\AppDataBackup", "rules": [
-            {"segments": ["local", "faketest", "mycache"], "level": "protected",
-             "note": "测试用：假想的用户数据"},
-        ]})
+    st, body = post(
+        "/api/config",
+        {
+            "port": run_port,
+            "dest": r"D:\AppDataBackup",
+            "rules": [
+                {
+                    "segments": ["local", "faketest", "mycache"],
+                    "level": "protected",
+                    "note": "测试用：假想的用户数据",
+                },
+            ],
+        },
+    )
     c.eq("合法配置保存 200", st, 200)
     c.eq("保存后 customRules 计数", body.get("customRules"), 1)
     c.ok("restartHint 为空（端口未变）", body.get("restartHint") == "", body.get("restartHint"))
@@ -69,8 +82,11 @@ def run():
     c.ok("清单非空（Temp 命中 safe）", pv.get("count", 0) >= 1, pv)
     paths = [x["p"] for x in pv.get("items", [])]
     c.ok("Temp 在清单内", any(p.lower().endswith("\\temp") for p in paths), paths)
-    c.ok("疑似目录不在清单内",
-         all(os.path.normcase(suspect_dir) != os.path.normcase(p) for p in paths), paths)
+    c.ok(
+        "疑似目录不在清单内",
+        all(os.path.normcase(suspect_dir) != os.path.normcase(p) for p in paths),
+        paths,
+    )
     c.ok("清单项合计正确", pv.get("total") == sum(x["s"] for x in pv.get("items", [])))
 
     # 无扫描结果场景没法轻易模拟（STATE 常驻），跳过；重点测确认词
@@ -93,8 +109,7 @@ def run():
     c.ok("有成功项", len(ok_items) >= 1, result.get("results"))
     c.ok("Temp 目录已被清走", not os.path.isdir(temp_dir))
     c.ok("疑似目录未被动过", os.path.isdir(suspect_dir))
-    c.ok("保护目录仍在",
-         os.path.isdir(os.path.join(ROOT, "Local", "Microsoft")))
+    c.ok("保护目录仍在", os.path.isdir(os.path.join(ROOT, "Local", "Microsoft")))
     c.eq("oneclick 不产生 move manifest", result.get("undoable"), False)
 
     # 历史有 oneclick 记录

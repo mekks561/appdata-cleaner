@@ -90,6 +90,7 @@ def _tree_index():
 def is_admin():
     try:
         import ctypes
+
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False
@@ -112,8 +113,16 @@ def _launch_scan(root, depth, hot, big, fresh):
 
     def job():
         try:
-            scan.run_scan(root, depth, hot, big, on_begin=begin, on_finish=finish,
-                          fresh=fresh, cache_dir=DATA_DIR)
+            scan.run_scan(
+                root,
+                depth,
+                hot,
+                big,
+                on_begin=begin,
+                on_finish=finish,
+                fresh=fresh,
+                cache_dir=DATA_DIR,
+            )
         except Exception:
             pass
 
@@ -123,7 +132,13 @@ def _launch_scan(root, depth, hot, big, fresh):
 def write_log(mode, dest, results, freed, before, after, manifest_id=""):
     """人类可读日志（保留 1.0 格式）+ 结构化历史（R11）。"""
     header = "===== %s  v%s  mode=%s  freed=%d  free %d -> %d" % (
-        time.strftime("%Y-%m-%d %H:%M:%S"), APP_VERSION, mode, freed, before, after)
+        time.strftime("%Y-%m-%d %H:%M:%S"),
+        APP_VERSION,
+        mode,
+        freed,
+        before,
+        after,
+    )
     lines = []
     if dest:
         lines.append("dest=%s" % dest)
@@ -132,21 +147,25 @@ def write_log(mode, dest, results, freed, before, after, manifest_id=""):
     for r in results:
         lines.append("[%s] %s  %s" % ("OK" if r["ok"] else "FAIL", r["p"], r["msg"]))
     history.append_text(LOG_DIR, header, lines)
-    history.append(LOG_DIR, {
-        "mode": mode,
-        "dest": dest or "",
-        "manifestId": manifest_id,
-        "count": len(results),
-        "ok": sum(1 for r in results if r["ok"]),
-        "fail": sum(1 for r in results if not r["ok"]),
-        "freed": freed,
-        "freedBySize": sum(r.get("size") or 0 for r in results if r["ok"]),
-        "version": APP_VERSION,
-        "items": [{"p": r["p"], "ok": r["ok"], "msg": r["msg"]} for r in results],
-    })
+    history.append(
+        LOG_DIR,
+        {
+            "mode": mode,
+            "dest": dest or "",
+            "manifestId": manifest_id,
+            "count": len(results),
+            "ok": sum(1 for r in results if r["ok"]),
+            "fail": sum(1 for r in results if not r["ok"]),
+            "freed": freed,
+            "freedBySize": sum(r.get("size") or 0 for r in results if r["ok"]),
+            "version": APP_VERSION,
+            "items": [{"p": r["p"], "ok": r["ok"], "msg": r["msg"]} for r in results],
+        },
+    )
 
 
 # ---- 一键清理 / 自动清理 共用服务端单点（V4-R1 不变量 1：仅 safe） ----
+
 
 def collect_safe_items():
     """从扫描树枚举所有「安全缓存且可删」的目录。
@@ -173,7 +192,7 @@ def collect_safe_items():
             return
         if node.get("level") == "safe" and node.get("deletable") is not False:
             items.append(node)
-            return                      # 整目录清掉，子项不再重复列出
+            return  # 整目录清掉，子项不再重复列出
         for k in node.get("kids") or ():
             rec(k)
 
@@ -216,8 +235,9 @@ def run_oneclick(mode):
     result["manifestId"] = ""
     result["undoable"] = False
 
-    write_log(mode, None, result["results"],
-              result["freed"], result["freeBefore"], result["freeAfter"])
+    write_log(
+        mode, None, result["results"], result["freed"], result["freeBefore"], result["freeAfter"]
+    )
     return result, None
 
 
@@ -229,14 +249,20 @@ def _auto_run_fn():
     """
     result, err = run_oneclick(autoclean.RUN_MODE)
     if err:
-        history.append(LOG_DIR, {
-            "mode": autoclean.RUN_MODE,
-            "error": err,
-            "ok": 0, "fail": 0, "count": 0,
-            "freed": 0, "freedBySize": 0,
-            "version": APP_VERSION,
-            "items": [],
-        })
+        history.append(
+            LOG_DIR,
+            {
+                "mode": autoclean.RUN_MODE,
+                "error": err,
+                "ok": 0,
+                "fail": 0,
+                "count": 0,
+                "freed": 0,
+                "freedBySize": 0,
+                "version": APP_VERSION,
+                "items": [],
+            },
+        )
         return 0, 0
     freed = result.get("freedBySize") or result.get("freed") or 0
     return freed, sum(1 for r in result["results"] if r["ok"])
@@ -271,7 +297,7 @@ def _scan_epoch():
         return None
 
 
-SCHEDULER = None      # 自动清理调度线程实例（main 启动后赋值；测试环境为 None）
+SCHEDULER = None  # 自动清理调度线程实例（main 启动后赋值；测试环境为 None）
 
 
 def auto_status():
@@ -279,8 +305,7 @@ def auto_status():
     ac = dict(CFG.get("autoClean") or config.DEFAULTS["autoClean"])
     last = last_auto_run()
     scan_epoch = _scan_epoch()
-    due, reason = autoclean.is_due(CFG, last["at"] if last else None,
-                                   scan_epoch)
+    due, reason = autoclean.is_due(CFG, last["at"] if last else None, scan_epoch)
     # 下次计划时刻：今日/本周计划时刻（已过则明天同时刻，粗略披露即可）
     lt = time.localtime()
     target = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, ac["hour"], 0, 0, 0, 0, -1))
@@ -293,10 +318,10 @@ def auto_status():
         "hour": ac.get("hour"),
         "lastRun": last,
         "nextRun": int(target) if ac.get("enabled") else None,
-        "due": due, "reason": reason,
+        "due": due,
+        "reason": reason,
         "scanAge": (int(time.time() - scan_epoch) if scan_epoch else None),
-        "fresh": scan_epoch is not None and
-                 time.time() - scan_epoch <= autoclean.FRESH_SECONDS,
+        "fresh": scan_epoch is not None and time.time() - scan_epoch <= autoclean.FRESH_SECONDS,
         "healthy": sched_err is None,
         "lastError": sched_err,
     }
@@ -324,8 +349,11 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, obj, code=200):
-        self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
-                   "application/json; charset=utf-8")
+        self._send(
+            code,
+            json.dumps(obj, ensure_ascii=False).encode("utf-8"),
+            "application/json; charset=utf-8",
+        )
 
     def _file(self, path, ctype):
         try:
@@ -373,32 +401,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(os.path.join(STATIC_DIR, "app.js"), "text/javascript; charset=utf-8")
         if u.path == "/api/info":
             root = STATE.root(DEFAULT_ROOT)
-            return self._json({
-                "app": APP_NAME,
-                "version": APP_VERSION,
-                "build": BUILD,
-                "python": sys.version.split()[0],
-                "os": "%s %s" % (
-                    os.name,
-                    sys.getwindowsversion().major if hasattr(sys, "getwindowsversion") else "",
-                ),
-                "root": root,
-                "defaultRoot": DEFAULT_ROOT,
-                "userHome": USER_HOME,
-                "disk": dir_usage(root),
-                "admin": is_admin(),
-                "port": PORT,
-                "logDir": LOG_DIR,
-                "dataDir": DATA_DIR,
-                "levels": rules.LEVEL_TEXT,
-                "dest": CFG["dest"],
-                # V4-R5：空间预警阈值由配置单点下发，前端不另设默认值
-                "warnGB": CFG.get("warnGB", config.DEFAULTS["warnGB"]),
-                "configPath": CFG_PATH,
-                "customRules": rules.user_rule_count(),
-                "configWarnings": CFG_WARNINGS,
-                "takeover": "--takeover" in sys.argv[1:],
-            })
+            return self._json(
+                {
+                    "app": APP_NAME,
+                    "version": APP_VERSION,
+                    "build": BUILD,
+                    "python": sys.version.split()[0],
+                    "os": "%s %s"
+                    % (
+                        os.name,
+                        sys.getwindowsversion().major if hasattr(sys, "getwindowsversion") else "",
+                    ),
+                    "root": root,
+                    "defaultRoot": DEFAULT_ROOT,
+                    "userHome": USER_HOME,
+                    "disk": dir_usage(root),
+                    "admin": is_admin(),
+                    "port": PORT,
+                    "logDir": LOG_DIR,
+                    "dataDir": DATA_DIR,
+                    "levels": rules.LEVEL_TEXT,
+                    "dest": CFG["dest"],
+                    # V4-R5：空间预警阈值由配置单点下发，前端不另设默认值
+                    "warnGB": CFG.get("warnGB", config.DEFAULTS["warnGB"]),
+                    "configPath": CFG_PATH,
+                    "customRules": rules.user_rule_count(),
+                    "configWarnings": CFG_WARNINGS,
+                    "takeover": "--takeover" in sys.argv[1:],
+                }
+            )
         if u.path == "/api/scan/status":
             return self._json(STATE.status())
         if u.path == "/api/result":
@@ -417,8 +448,9 @@ class Handler(BaseHTTPRequestHandler):
             res = STATE.result()
             if not res:
                 return self._json({"error": "还没有扫描结果"}, 404)
-            return self._json(res.get("ext") or
-                              {"types": 0, "items": [], "approx": False, "partial": False})
+            return self._json(
+                res.get("ext") or {"types": 0, "items": [], "approx": False, "partial": False}
+            )
         if u.path == "/api/history":
             q = parse_qs(u.query or "")
             try:
@@ -435,11 +467,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 days = 30
             data = history.trend(LOG_DIR, days)
-            return self._json({
-                "days": data,
-                "totalFreed": sum(d["freed"] for d in data),
-                "totalOps": sum(d["ops"] for d in data),
-            })
+            return self._json(
+                {
+                    "days": data,
+                    "totalFreed": sum(d["freed"] for d in data),
+                    "totalOps": sum(d["ops"] for d in data),
+                }
+            )
         if u.path == "/api/trash/size":
             return self._json(actions.recycle_bin_size())
         if u.path == "/api/dup/status":
@@ -452,8 +486,9 @@ class Handler(BaseHTTPRequestHandler):
             out["seq"] = DUP.seq()
             return self._json(out)
         if u.path == "/api/config":
-            return self._json({"config": CFG, "path": CFG_PATH,
-                               "customRules": rules.user_rule_count()})
+            return self._json(
+                {"config": CFG, "path": CFG_PATH, "customRules": rules.user_rule_count()}
+            )
         if u.path == "/api/roots":
             return self._get_roots()
         if u.path == "/api/rules/export":
@@ -540,17 +575,26 @@ class Handler(BaseHTTPRequestHandler):
     def _roots_list(self):
         """视图：内置默认根恒排第一，用户登记根随后。"""
         items = [{"path": DEFAULT_ROOT, "label": "AppData（默认）", "default": True}]
-        for r in (CFG.get("roots") or []):
-            items.append({"path": r["path"],
-                           "label": r.get("label") or os.path.basename(r["path"]),
-                           "default": False})
+        for r in CFG.get("roots") or []:
+            items.append(
+                {
+                    "path": r["path"],
+                    "label": r.get("label") or os.path.basename(r["path"]),
+                    "default": False,
+                }
+            )
         return items
 
     def _get_roots(self):
-        return self._json({"roots": self._roots_list(),
-                           "defaultRoot": DEFAULT_ROOT, "userHome": USER_HOME,
-                           "max": roots_mod.MAX_ROOTS,
-                           "current": STATE.root(DEFAULT_ROOT)})
+        return self._json(
+            {
+                "roots": self._roots_list(),
+                "defaultRoot": DEFAULT_ROOT,
+                "userHome": USER_HOME,
+                "max": roots_mod.MAX_ROOTS,
+                "current": STATE.root(DEFAULT_ROOT),
+            }
+        )
 
     def _save_roots(self, new_list):
         """根列表落盘单点：validate → config.save(.bak) → 更新内存。"""
@@ -569,8 +613,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(cur) >= roots_mod.MAX_ROOTS:
             return self._json({"error": "扫描根最多 %d 个" % roots_mod.MAX_ROOTS}, 400)
         existing = [x["path"] for x in self._roots_list()]
-        item, err = roots_mod.validate_item(body.get("path"), USER_HOME,
-                                            existing, body.get("label"))
+        item, err = roots_mod.validate_item(
+            body.get("path"), USER_HOME, existing, body.get("label")
+        )
         if err:
             return self._json({"error": err}, 400)
         cur.append(item)
@@ -583,8 +628,7 @@ class Handler(BaseHTTPRequestHandler):
         if target.lower() == roots_mod.norm(DEFAULT_ROOT).lower():
             return self._json({"error": "内置默认根不能删除"}, 400)
         cur = list(CFG.get("roots") or [])
-        kept = [r for r in cur
-                if (roots_mod.norm(r["path"]) or "").lower() != target.lower()]
+        kept = [r for r in cur if (roots_mod.norm(r["path"]) or "").lower() != target.lower()]
         if len(kept) == len(cur):
             return self._json({"error": "该扫描根不存在"}, 400)
         return self._save_roots(kept)
@@ -603,8 +647,7 @@ class Handler(BaseHTTPRequestHandler):
         big = max(0.001, float(body.get("bigMB") or 100))
         fresh = bool(body.get("fresh"))
         _launch_scan(root, depth, hot, big, fresh)
-        return self._json({"ok": True, "version": APP_VERSION, "root": root,
-                           "fresh": fresh})
+        return self._json({"ok": True, "version": APP_VERSION, "root": root, "fresh": fresh})
 
     def _post_list(self, body):
         p = body.get("path") or ""
@@ -622,11 +665,15 @@ class Handler(BaseHTTPRequestHandler):
         paths = body.get("paths") or []
         rows, total = actions.preview_rows(paths, root)
         token = TOKENS.issue(paths, total)
-        return self._json({
-            "rows": rows, "total": total, "token": token,
-            "free": dir_usage(root)["free"],
-            "blockedCount": sum(1 for r in rows if r["blocked"]),
-        })
+        return self._json(
+            {
+                "rows": rows,
+                "total": total,
+                "token": token,
+                "free": dir_usage(root)["free"],
+                "blockedCount": sum(1 for r in rows if r["blocked"]),
+            }
+        )
 
     def _post_exec(self, body):
         mode = body.get("mode") or "recycle"
@@ -647,14 +694,22 @@ class Handler(BaseHTTPRequestHandler):
 
         manifest_id = ""
         if mode == "move" and result["moved"]:
-            manifest_id = history.new_manifest(LOG_DIR, result["moved"], root,
-                                               {"dest": body.get("dest") or ""})
+            manifest_id = history.new_manifest(
+                LOG_DIR, result["moved"], root, {"dest": body.get("dest") or ""}
+            )
             history.prune_manifests(LOG_DIR)
         result["manifestId"] = manifest_id
         result["undoable"] = bool(manifest_id)
 
-        write_log(mode, body.get("dest"), result["results"],
-                  result["freed"], result["freeBefore"], result["freeAfter"], manifest_id)
+        write_log(
+            mode,
+            body.get("dest"),
+            result["results"],
+            result["freed"],
+            result["freeBefore"],
+            result["freeAfter"],
+            manifest_id,
+        )
         return self._json(result)
 
     def _post_undo(self, body):
@@ -663,17 +718,20 @@ class Handler(BaseHTTPRequestHandler):
         result = actions.undo_move(LOG_DIR, mid, root)
         if not result.get("ok"):
             return self._json(result, 400)
-        history.append(LOG_DIR, {
-            "mode": "undo",
-            "manifestId": mid,
-            "count": len(result["results"]),
-            "ok": result["okCount"],
-            "fail": result["failCount"],
-            "freed": 0,
-            "freedBySize": result["restoredBytes"],
-            "version": APP_VERSION,
-            "items": [{"p": r["p"], "ok": r["ok"], "msg": r["msg"]} for r in result["results"]],
-        })
+        history.append(
+            LOG_DIR,
+            {
+                "mode": "undo",
+                "manifestId": mid,
+                "count": len(result["results"]),
+                "ok": result["okCount"],
+                "fail": result["failCount"],
+                "freed": 0,
+                "freedBySize": result["restoredBytes"],
+                "version": APP_VERSION,
+                "items": [{"p": r["p"], "ok": r["ok"], "msg": r["msg"]} for r in result["results"]],
+            },
+        )
         return self._json(result)
 
     def _post_trash_empty(self, body):
@@ -684,13 +742,29 @@ class Handler(BaseHTTPRequestHandler):
         ok, msg = actions.empty_recycle_bin()
         after = dir_usage(drive_root)["free"]
         if ok:
-            history.append(LOG_DIR, {
-                "mode": "trash-empty", "count": 1, "ok": 1, "fail": 0,
-                "freed": max(0, after - before), "freedBySize": 0,
-                "version": APP_VERSION, "items": [{"p": "回收站", "ok": True, "msg": msg}],
-            })
-        return self._json({"ok": ok, "msg": msg, "freeBefore": before, "freeAfter": after,
-                           "freed": max(0, after - before)}, 200 if ok else 400)
+            history.append(
+                LOG_DIR,
+                {
+                    "mode": "trash-empty",
+                    "count": 1,
+                    "ok": 1,
+                    "fail": 0,
+                    "freed": max(0, after - before),
+                    "freedBySize": 0,
+                    "version": APP_VERSION,
+                    "items": [{"p": "回收站", "ok": True, "msg": msg}],
+                },
+            )
+        return self._json(
+            {
+                "ok": ok,
+                "msg": msg,
+                "freeBefore": before,
+                "freeAfter": after,
+                "freed": max(0, after - before),
+            },
+            200 if ok else 400,
+        )
 
     def _post_config(self, body):
         """保存设置（R3）。逐字段校验，不通过就整体拒绝，绝不写半份配置。
@@ -702,8 +776,7 @@ class Handler(BaseHTTPRequestHandler):
             body = dict(body, roots=list(CFG.get("roots") or []))
         cfg, errors, warnings = config.validate(body)
         if errors:
-            return self._json({"error": "配置未保存，存在非法字段",
-                               "details": errors}, 400)
+            return self._json({"error": "配置未保存，存在非法字段", "details": errors}, 400)
         err = config.save(APP_DIR, cfg)
         if err:
             return self._json({"error": err}, 500)
@@ -717,21 +790,30 @@ class Handler(BaseHTTPRequestHandler):
             restart_hint = "端口修改需重启服务后生效"
         CFG = cfg
         CFG_WARNINGS = warnings
-        return self._json({"ok": True, "config": CFG,
-                           "customRules": n, "warnings": warnings,
-                           "restartHint": restart_hint})
+        return self._json(
+            {
+                "ok": True,
+                "config": CFG,
+                "customRules": n,
+                "warnings": warnings,
+                "restartHint": restart_hint,
+            }
+        )
 
     # ---- 规则包导入/导出（1.7 R1）----
     def _get_rules_export(self):
         """导出当前自定义规则为规则包（浏览器直接下载 JSON 文件）。"""
-        pkg = rulepkg.build_package(CFG.get("rules") or [], APP_VERSION,
-                                    time.strftime("%Y-%m-%dT%H:%M:%S"))
+        pkg = rulepkg.build_package(
+            CFG.get("rules") or [], APP_VERSION, time.strftime("%Y-%m-%dT%H:%M:%S")
+        )
         raw = json.dumps(pkg, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
-        self.send_header("Content-Disposition", "attachment; filename=\"%s\""
-                         % time.strftime("appdata-cleaner-rules-%Y%m%d.json"))
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="%s"' % time.strftime("appdata-cleaner-rules-%Y%m%d.json"),
+        )
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
@@ -766,8 +848,15 @@ class Handler(BaseHTTPRequestHandler):
         CFG = cfg
         CFG_WARNINGS = cfg_warnings
         dropped = len(body.get("rules") or []) - len(valid)
-        return self._json({"ok": True, "applied": len(valid), "dropped": max(0, dropped),
-                           "warnings": warnings, "customRules": n})
+        return self._json(
+            {
+                "ok": True,
+                "applied": len(valid),
+                "dropped": max(0, dropped),
+                "warnings": warnings,
+                "customRules": n,
+            }
+        )
 
     # ---- 一键清理（R2）+ 自动清理（V4-R1）共用单点 ----
     def _collect_safe_items(self):
@@ -778,17 +867,33 @@ class Handler(BaseHTTPRequestHandler):
         if items is None:
             return self._json({"error": "还没有扫描结果"}, 404)
         if not items:
-            return self._json({"items": [], "total": 0, "count": 0,
-                               "partial": False,
-                               "msg": "当前扫描结果里没有「安全缓存」级目录"})
-        return self._json({
-            "items": [{"p": it["p"], "n": it["n"], "s": it["s"],
-                       "note": it.get("note") or "", "f": it.get("f")} for it in items],
-            "total": sum(it["s"] for it in items),
-            "count": len(items),
-            "partial": len(items) >= ONECLICK_MAX,
-            "free": dir_usage(STATE.root(DEFAULT_ROOT))["free"],
-        })
+            return self._json(
+                {
+                    "items": [],
+                    "total": 0,
+                    "count": 0,
+                    "partial": False,
+                    "msg": "当前扫描结果里没有「安全缓存」级目录",
+                }
+            )
+        return self._json(
+            {
+                "items": [
+                    {
+                        "p": it["p"],
+                        "n": it["n"],
+                        "s": it["s"],
+                        "note": it.get("note") or "",
+                        "f": it.get("f"),
+                    }
+                    for it in items
+                ],
+                "total": sum(it["s"] for it in items),
+                "count": len(items),
+                "partial": len(items) >= ONECLICK_MAX,
+                "free": dir_usage(STATE.root(DEFAULT_ROOT))["free"],
+            }
+        )
 
     def _post_oneclick(self, body):
         # 双保险：确认词 + 服务端重新枚举（忽略客户端可能传来的任何清单）
@@ -807,10 +912,8 @@ class Handler(BaseHTTPRequestHandler):
         手动触发与后台执行不可能有第二套行为（1.5 单点收口）。
         """
         r = autoclean.maybe_run(
-            CFG,
-            lambda: (last_auto_run() or {}).get("at"),
-            _scan_epoch,
-            _auto_run_fn)
+            CFG, lambda: (last_auto_run() or {}).get("at"), _scan_epoch, _auto_run_fn
+        )
         # 执行失败（无扫描结果 / 无 safe 项）时，_auto_run_fn 已把原因写进
         # auto-oneclick 历史；这里读回给调用方，测试与 UI 都能直接看到。
         if r.get("ran") and not r.get("freed") and not r.get("count"):
@@ -844,12 +947,16 @@ class Handler(BaseHTTPRequestHandler):
             target, args = sys.executable, '"--takeover"'
         else:
             target, args = sys.executable, '"%s","--takeover"' % os.path.abspath(__file__)
-        ps = ('Start-Process -FilePath "%s" -ArgumentList \'%s\' '
-              '-WorkingDirectory "%s" -Verb RunAs' % (target, args, APP_DIR))
+        ps = (
+            "Start-Process -FilePath \"%s\" -ArgumentList '%s' "
+            '-WorkingDirectory "%s" -Verb RunAs' % (target, args, APP_DIR)
+        )
         try:
-            subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
-                             close_fds=True,
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", ps],
+                close_fds=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
         except Exception as ex:
             return self._json({"error": "无法启动提权进程：%s" % ex}, 500)
 
@@ -858,7 +965,8 @@ class Handler(BaseHTTPRequestHandler):
             while time.time() < deadline:
                 try:
                     with urllib.request.urlopen(
-                            "http://127.0.0.1:%d/api/info" % PORT, timeout=1.5) as r:
+                        "http://127.0.0.1:%d/api/info" % PORT, timeout=1.5
+                    ) as r:
                         if json.loads(r.read().decode("utf-8")).get("takeover"):
                             time.sleep(0.4)
                             os._exit(0)
@@ -867,11 +975,13 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(0.6)
 
         threading.Thread(target=_wait_and_exit, daemon=True).start()
-        return self._json({
-            "ok": True,
-            "message": "请在弹出的 UAC 窗口点「是」。确认后服务将以管理员身份自动重启，"
-                       "本页面会自动恢复；点「否」则保持现状。",
-        })
+        return self._json(
+            {
+                "ok": True,
+                "message": "请在弹出的 UAC 窗口点「是」。确认后服务将以管理员身份自动重启，"
+                "本页面会自动恢复；点「否」则保持现状。",
+            }
+        )
 
     # ---------- 重复文件检测（R1） ----------
 
@@ -881,8 +991,7 @@ class Handler(BaseHTTPRequestHandler):
         dup_cfg = CFG.get("dup") or {}
         try:
             raw_min = body.get("minSizeMB")
-            min_mb = float(raw_min if raw_min is not None
-                           else dup_cfg.get("minSizeMB", 10))
+            min_mb = float(raw_min if raw_min is not None else dup_cfg.get("minSizeMB", 10))
         except (TypeError, ValueError):
             min_mb = 10.0
         min_mb = min(1440.0, max(0.01, min_mb))
@@ -894,23 +1003,30 @@ class Handler(BaseHTTPRequestHandler):
         min_bytes = int(min_mb * dupfind.MB)
 
         cached = DUP.result()
-        if (cached and not body.get("fresh")
-                and cached.get("root") == root and cached.get("minSize") == min_bytes):
+        if (
+            cached
+            and not body.get("fresh")
+            and cached.get("root") == root
+            and cached.get("minSize") == min_bytes
+        ):
             return self._json({"ok": True, "cached": True})
 
         DUP.begin()
 
         def job():
             try:
-                DUP.finish(dupfind.find_duplicates(
-                    root, min_size=min_bytes, budget_sec=budget,
-                    on_phase=DUP.phase))
+                DUP.finish(
+                    dupfind.find_duplicates(
+                        root, min_size=min_bytes, budget_sec=budget, on_phase=DUP.phase
+                    )
+                )
             except Exception as ex:
                 DUP.fail(str(ex))
 
         threading.Thread(target=job, daemon=True).start()
-        return self._json({"ok": True, "cached": False, "minSizeMB": min_mb,
-                           "budgetSec": budget, "root": root})
+        return self._json(
+            {"ok": True, "cached": False, "minSizeMB": min_mb, "budgetSec": budget, "root": root}
+        )
 
     def _post_dup_clean(self, body):
         res = DUP.result()
@@ -968,16 +1084,18 @@ class Handler(BaseHTTPRequestHandler):
         after = dir_usage(root)["free"]
         freed = max(0, after - before)
         write_log("dup", "", results, freed, before, after)
-        return self._json({
-            "results": results,
-            "okCount": sum(1 for r in results if r["ok"]),
-            "failCount": sum(1 for r in results if not r["ok"]),
-            "freed": freed,
-            "freeBefore": before,
-            "freeAfter": after,
-            "undoable": False,
-            "recycleHint": "已移入回收站，可从系统回收站还原",
-        })
+        return self._json(
+            {
+                "results": results,
+                "okCount": sum(1 for r in results if r["ok"]),
+                "failCount": sum(1 for r in results if not r["ok"]),
+                "freed": freed,
+                "freeBefore": before,
+                "freeAfter": after,
+                "undoable": False,
+                "recycleHint": "已移入回收站，可从系统回收站还原",
+            }
+        )
 
 
 def _port_busy():
@@ -1073,8 +1191,14 @@ def main():
     print(" 扫描根目录: %s" % DEFAULT_ROOT)
     print(" 数据目录  : %s" % DATA_DIR)
     print(" 日志目录  : %s" % LOG_DIR)
-    print(" 当前权限  : %s" % ("管理员" if is_admin() else
-                            "普通用户（部分目录会提示拒绝访问，可用『以管理员身份启动.bat』）"))
+    print(
+        " 当前权限  : %s"
+        % (
+            "管理员"
+            if is_admin()
+            else "普通用户（部分目录会提示拒绝访问，可用『以管理员身份启动.bat』）"
+        )
+    )
     print(" Python    : %s" % sys.version.split()[0])
     print(" 默认删除方式: 移入回收站（可从回收站还原）")
     if mode == "gui":
@@ -1082,6 +1206,7 @@ def main():
     print(" 关闭本窗口即停止服务")
     print("=" * 60)
     if not os.environ.get("APP_NO_WARMUP"):
+
         def _warmup():
             time.sleep(0.5)
             if STATE.running() or STATE.result():
@@ -1090,6 +1215,7 @@ def main():
                 return
             _launch_scan(DEFAULT_ROOT, 3, 50, 100, False)
             print(" 已在后台预热扫描（增量），完成后打开页面即有数据")
+
         threading.Thread(target=_warmup, daemon=True).start()
 
     # V4-R1 定时自动清理：线程常驻、实时读 CFG —— 设置页开关立即生效，
@@ -1103,14 +1229,21 @@ def main():
             _auto_run_fn,
             on_done=lambda r: print(
                 " 自动清理完成：释放 %.1f MB（%d 项）"
-                % (r.get("freed", 0) / 1048576.0, r.get("count", 0))))
+                % (r.get("freed", 0) / 1048576.0, r.get("count", 0))
+            ),
+        )
         sched.start()
         global SCHEDULER
         SCHEDULER = sched
         if CFG["autoClean"]["enabled"]:
-            print(" 定时自动清理已启用（%s，每天 %02d 点）：每 %d 分钟检查一次"
-                  % (CFG["autoClean"]["interval"], CFG["autoClean"]["hour"],
-                     autoclean.CHECK_INTERVAL // 60))
+            print(
+                " 定时自动清理已启用（%s，每天 %02d 点）：每 %d 分钟检查一次"
+                % (
+                    CFG["autoClean"]["interval"],
+                    CFG["autoClean"]["hour"],
+                    autoclean.CHECK_INTERVAL // 60,
+                )
+            )
 
     if mode == "gui":
         # 桌面窗口模式：服务跑在后台线程，主线程交给窗口消息循环；

@@ -17,11 +17,22 @@ MAX_PATH_LEN = 512
 MAX_LABEL_LEN = 32
 
 # 系统保护目录段（小写精确匹配），避免把系统目录登记成扫描根
-FORBIDDEN_SEGS = frozenset((
-    "windows", "program files", "program files (x86)", "programdata",
-    "system volume information", "$recycle.bin", "system32", "syswow64",
-    "boot", "perflogs", "recovery", "windowsapps",
-))
+FORBIDDEN_SEGS = frozenset(
+    (
+        "windows",
+        "program files",
+        "program files (x86)",
+        "programdata",
+        "system volume information",
+        "$recycle.bin",
+        "system32",
+        "syswow64",
+        "boot",
+        "perflogs",
+        "recovery",
+        "windowsapps",
+    )
+)
 
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -37,9 +48,9 @@ def norm(path):
         return None
     p = path.strip()
     if p.startswith("\\\\") or p.startswith("//"):
-        return None                     # UNC / 网络路径一律拒绝
+        return None  # UNC / 网络路径一律拒绝
     if ".." in p.replace("/", "\\").split("\\"):
-        return None                     # 不接受任何穿越段（规范化也挡不住语义歧义）
+        return None  # 不接受任何穿越段（规范化也挡不住语义歧义）
     try:
         return os.path.normpath(os.path.abspath(p))
     except Exception:
@@ -88,7 +99,7 @@ def validate_item(path, home, existing, label=None):
             return None, "系统保护目录不能登记为扫描根"
     if not os.path.isdir(p):
         return None, "目录不存在或不可访问"
-    for old in (existing or []):
+    for old in existing or []:
         old_n = norm(old)
         if old_n and _is_nested(p, old_n):
             return None, "与已有扫描根重复或相互嵌套"

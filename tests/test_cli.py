@@ -29,6 +29,7 @@ def _app():
     global _SERVER
     if _SERVER is None:
         import server
+
         _SERVER = server
     return _SERVER
 
@@ -86,11 +87,11 @@ def _capture(argv):
 
 
 def _cli_history():
-    return [r for r in history.read(_app().LOG_DIR, 100)
-            if r.get("mode") == cli.CLI_MODE]
+    return [r for r in history.read(_app().LOG_DIR, 100) if r.get("mode") == cli.CLI_MODE]
 
 
 # ---------------- 入口分发与参数契约 ----------------
+
 
 def test_invocation(c):
     c.eq("空参数 → 服务", cli.is_cli_invocation([]), False)
@@ -105,8 +106,7 @@ def test_invocation(c):
 def test_parser(c):
     p = cli.build_parser("1.6.0")
     a = p.parse_args(["--scan", "--fresh", "--max-depth", "5", "--json"])
-    c.eq("参数解析", (a.scan, a.fresh, a.max_depth, a.json, a.yes),
-         (True, True, 5, True, False))
+    c.eq("参数解析", (a.scan, a.fresh, a.max_depth, a.json, a.yes), (True, True, 5, True, False))
     err = io.StringIO()
     with contextlib.redirect_stderr(err):
         threw = False
@@ -122,8 +122,11 @@ def test_parser(c):
         except SystemExit:
             threw = True
     c.ok("未知参数报错", threw)
-    c.eq("退出码常量", (cli.EXIT_OK, cli.EXIT_FAILED, cli.EXIT_INVALID,
-                        cli.EXIT_OUTSIDE, cli.EXIT_UNCONFIRMED), (0, 1, 2, 3, 4))
+    c.eq(
+        "退出码常量",
+        (cli.EXIT_OK, cli.EXIT_FAILED, cli.EXIT_INVALID, cli.EXIT_OUTSIDE, cli.EXIT_UNCONFIRMED),
+        (0, 1, 2, 3, 4),
+    )
 
 
 def test_errors(c):
@@ -134,14 +137,16 @@ def test_errors(c):
         code, d, _ = _capture(["--scan", "--root", r"C:\Windows\Temp", "--json"])
         c.eq("越界 → 3", code, 3)
         c.ok("越界有提示", "只允许扫描" in d.get("error", ""))
-        code, d, _ = _capture(["--scan", "--root",
-                               os.path.join(TMP_ROOT, "_missing"), "--json"])
+        code, d, _ = _capture(["--scan", "--root", os.path.join(TMP_ROOT, "_missing"), "--json"])
         c.eq("目录不存在 → 2", code, 2)
-        c.ok("错误对象外层字段齐全",
-             set(("version", "action", "root", "ok", "exitCode", "error")) <= set(d))
+        c.ok(
+            "错误对象外层字段齐全",
+            set(("version", "action", "root", "ok", "exitCode", "error")) <= set(d),
+        )
 
 
 # ---------------- 扫描 / 预览 ----------------
+
 
 def test_scan_and_dry_run(c):
     safe, _keep = _fixture()
@@ -162,14 +167,14 @@ def test_scan_and_dry_run(c):
         c.eq("dry-run 1 项", d.get("itemCount"), 1)
         c.eq("dry-run 体积 2MB", d.get("totalSize"), 2 * MB)
         items = d.get("items") or []
-        c.ok("dry-run 指向 safe 目录",
-             bool(items) and items[0]["p"] == safe)
+        c.ok("dry-run 指向 safe 目录", bool(items) and items[0]["p"] == safe)
         c.eq("dry-run level", (items[0]["level"] if items else None), "safe")
         c.eq("dry-run 文件树不变", _tree(TMP_ROOT), before)
         plan, err = _app().plan_oneclick()
         c.eq("plan_oneclick 无错", err, None)
-        c.eq("CLI 清单与服务端枚举一致",
-             [it["p"] for it in (plan or [])], [it["p"] for it in items])
+        c.eq(
+            "CLI 清单与服务端枚举一致", [it["p"] for it in (plan or [])], [it["p"] for it in items]
+        )
 
         code, _d, raw = _capture(["--scan", "--root", TMP_ROOT, "--fresh"])
         c.eq("人读输出退出码 0", code, 0)
@@ -191,12 +196,12 @@ def test_unconfirmed(c):
 
 # ---------------- 真删 / 历史 / 幂等 ----------------
 
+
 def test_oneclick_yes(c):
     safe, keep = _fixture()
     with Sandbox():
         before = _tree(TMP_ROOT)
-        code, d, _ = _capture(["--oneclick", "--yes", "--root", TMP_ROOT,
-                               "--json", "--fresh"])
+        code, d, _ = _capture(["--oneclick", "--yes", "--root", TMP_ROOT, "--json", "--fresh"])
         c.eq("真删退出码 0", code, 0)
         c.eq("真删 deleted", d.get("deleted"), True)
         c.eq("真删 mode", d.get("mode"), cli.CLI_MODE)
@@ -207,14 +212,11 @@ def test_oneclick_yes(c):
         c.ok("safe 目录已移走", not os.path.isdir(safe))
         c.ok("data 级文件保留", os.path.isfile(os.path.join(keep, "settings.json")))
         after = _tree(TMP_ROOT)
-        c.eq("体积恰好少 2MB", sum(after.values()),
-             sum(before.values()) - 2 * MB)
+        c.eq("体积恰好少 2MB", sum(after.values()), sum(before.values()) - 2 * MB)
         recs = _cli_history()
         c.eq("历史恰好 1 条", len(recs), 1)
-        c.eq("历史释放量一致",
-             (recs[0].get("freedBySize") if recs else None), 2 * MB)
-        c.ok("历史条目含 1 个结果",
-             bool(recs) and len(recs[0].get("items") or []) == 1)
+        c.eq("历史释放量一致", (recs[0].get("freedBySize") if recs else None), 2 * MB)
+        c.ok("历史条目含 1 个结果", bool(recs) and len(recs[0].get("items") or []) == 1)
 
         code2, d2, _ = _capture(["--dry-run", "--root", TMP_ROOT, "--json", "--fresh"])
         c.eq("清理后 dry-run 退出码 1", code2, 1)

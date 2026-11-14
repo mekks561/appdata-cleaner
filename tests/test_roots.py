@@ -32,6 +32,7 @@ def _mk(name):
 
 # ---------------- 单元：校验矩阵 ----------------
 
+
 def test_unit(c):
     c.eq("None → 空表合法", roots_mod.validate_list(None, HOME), ([], []))
     out, errs = roots_mod.validate_list("oops", HOME)
@@ -75,9 +76,9 @@ def test_unit(c):
     c.ok("默认根占位（嵌套）被拒", "重复或相互嵌套" in (err or ""), err)
 
     # config 层降级语义
-    cfg, errors, warns = config.validate({"roots": [
-        {"path": good, "label": "合法"}, {"path": "C:\\", "label": "坏"}],
-        "rules": []})
+    cfg, errors, warns = config.validate(
+        {"roots": [{"path": good, "label": "合法"}, {"path": "C:\\", "label": "坏"}], "rules": []}
+    )
     c.ok("坏根不产生硬错误", not errors, errors)
     c.eq("合法根保留", len(cfg["roots"]), 1)
     c.ok("坏根降级为警告", any("已忽略" in w for w in warns), warns)
@@ -88,6 +89,7 @@ def test_unit(c):
 
 # ---------------- API：端点闭环 ----------------
 
+
 def test_api(c):
     _st, snap = get("/api/config")
     orig = snap["config"]
@@ -97,8 +99,11 @@ def test_api(c):
     try:
         st, v = get("/api/roots")
         c.eq("GET /api/roots → 200", st, 200)
-        c.ok("默认根恒第一且 default=True",
-             v["roots"][0]["path"] == DEFAULT and v["roots"][0]["default"] is True, v["roots"][0])
+        c.ok(
+            "默认根恒第一且 default=True",
+            v["roots"][0]["path"] == DEFAULT and v["roots"][0]["default"] is True,
+            v["roots"][0],
+        )
         c.eq("max=8", v["max"], roots_mod.MAX_ROOTS)
         c.eq("defaultRoot 正确", v["defaultRoot"], DEFAULT)
         c.ok("带 userHome/current", bool(v["userHome"]) and bool(v["current"]), v)
@@ -109,8 +114,11 @@ def test_api(c):
 
         st, r = post("/api/roots/add", {"path": a, "label": "下载目录"})
         c.eq("add 合法 → 200", st, 200)
-        c.ok("返回新根列表", any(x["path"] == a and x["label"] == "下载目录"
-                               for x in r.get("roots", [])), r)
+        c.ok(
+            "返回新根列表",
+            any(x["path"] == a and x["label"] == "下载目录" for x in r.get("roots", [])),
+            r,
+        )
         _st, cfg = get("/api/config")
         c.ok("已持久化到 config", any(x["path"] == a for x in cfg["config"]["roots"]), cfg)
 
@@ -161,6 +169,7 @@ def test_api(c):
     finally:
         post("/api/config", dict(orig, roots=orig_roots))
         import shutil
+
         shutil.rmtree(os.path.join(APP, "testdata", "roots_sandbox"), ignore_errors=True)
     _st, fin = get("/api/config")
     c.eq("配置快照还原", fin["config"]["roots"], orig_roots)

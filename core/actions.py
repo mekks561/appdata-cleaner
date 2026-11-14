@@ -43,6 +43,7 @@ class SHFILEOP(ctypes.Structure):
 
 # ---------------- 底层动作 ----------------
 
+
 def recycle(paths):
     """移入回收站（可还原）。失败抛 OSError，消息已是人话。
 
@@ -56,14 +57,13 @@ def recycle(paths):
     op.wFunc = FO_DELETE
     op.pFrom = buf
     op.pTo = None
-    op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
-                 | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR)
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOF_NOCONFIRMMKDIR
     res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
     if res == 0 and not op.fAnyOperationsAborted:
         return
     left = [p for p in paths if os.path.exists(safe_path(p))]
     if not left:
-        return                          # 已经全清掉了，返回码不可信
+        return  # 已经全清掉了，返回码不可信
     if res != 0:
         raise OSError(0, shell_message(res))
     raise OSError(0, "操作被系统中止")
@@ -83,6 +83,7 @@ def force_rmtree(path):
     用 onerror 而非 onexc：onexc 是 Python 3.12 才有的参数，
     1.0 因此只能跑在 3.12+，而 Win10 上常见的是 3.9~3.11。
     """
+
     def onerror(func, p, exc_info):
         try:
             os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
@@ -112,8 +113,8 @@ SHRB_NOCONFIRMATION = 0x0001
 SHRB_NOPROGRESSUI = 0x0002
 SHRB_NOSOUND = 0x0004
 
-_E_UNEXPECTED = -2147467259          # 0x8000FFFF
-_E_ACCESSDENIED = -2147024891        # 0x80070005
+_E_UNEXPECTED = -2147467259  # 0x8000FFFF
+_E_ACCESSDENIED = -2147024891  # 0x80070005
 
 
 def empty_recycle_bin():
@@ -181,8 +182,13 @@ def undo_move(log_dir, manifest_id, root):
 
     data = history.load_manifest(log_dir, manifest_id)
     if not data:
-        return {"ok": False, "error": "撤销清单不存在、格式非法或已被清理",
-                "results": [], "restoredCount": 0, "restoredBytes": 0}
+        return {
+            "ok": False,
+            "error": "撤销清单不存在、格式非法或已被清理",
+            "results": [],
+            "restoredCount": 0,
+            "restoredBytes": 0,
+        }
 
     before = dir_usage(root)["free"]
     results = []
@@ -198,8 +204,9 @@ def undo_move(log_dir, manifest_id, root):
             results.append({"p": frm, "ok": False, "msg": "原路径不在扫描目录内，已拒绝"})
             continue
         if not to or not os.path.exists(safe_path(to)):
-            results.append({"p": frm, "ok": False,
-                            "msg": "备份已不存在（可能已被删除，或已经撤销过）"})
+            results.append(
+                {"p": frm, "ok": False, "msg": "备份已不存在（可能已被删除，或已经撤销过）"}
+            )
             continue
 
         target = frm
@@ -215,11 +222,15 @@ def undo_move(log_dir, manifest_id, root):
             if os.path.exists(safe_path(target)):
                 restored += 1
                 restored_bytes += size
-                results.append({
-                    "p": frm, "ok": True, "size": size,
-                    "msg": "已还原到 %s" % ("原路径" if not renamed else target),
-                    "target": target,
-                })
+                results.append(
+                    {
+                        "p": frm,
+                        "ok": True,
+                        "size": size,
+                        "msg": "已还原到 %s" % ("原路径" if not renamed else target),
+                        "target": target,
+                    }
+                )
             else:
                 results.append({"p": frm, "ok": False, "msg": "搬回后目标路径仍不存在"})
         except Exception as ex:
@@ -275,6 +286,7 @@ def validate_dest(dest, root):
 
 # ---------------- 执行 ----------------
 
+
 def exec_action(paths, mode, dest, root):
     results = []
     valid = []
@@ -303,7 +315,7 @@ def exec_action(paths, mode, dest, root):
     moved_items = []
 
     for i in range(0, len(valid), BATCH):
-        batch = valid[i:i + BATCH]
+        batch = valid[i : i + BATCH]
         for p in batch:
             try:
                 size = tree_size(p) or 0
@@ -323,16 +335,20 @@ def exec_action(paths, mode, dest, root):
                     moved_bytes += size
                     if mode == "move" and target:
                         moved_items.append({"from": p, "to": target, "size": size})
-                    results.append({
-                        "p": p, "ok": True, "size": size,
-                        "level": rules.categorize(p),
-                        "msg": {"move": "已移动到目标文件夹",
-                                "permanent": "已永久删除"}.get(mode, "已移入回收站"),
-                        "target": target or "",
-                    })
+                    results.append(
+                        {
+                            "p": p,
+                            "ok": True,
+                            "size": size,
+                            "level": rules.categorize(p),
+                            "msg": {"move": "已移动到目标文件夹", "permanent": "已永久删除"}.get(
+                                mode, "已移入回收站"
+                            ),
+                            "target": target or "",
+                        }
+                    )
                 else:
-                    results.append({"p": p, "ok": False,
-                                    "msg": "操作后路径仍存在，可能部分失败"})
+                    results.append({"p": p, "ok": False, "msg": "操作后路径仍存在，可能部分失败"})
             except Exception as ex:
                 results.append({"p": p, "ok": False, "msg": classify_error(ex, p)})
             time.sleep(0.03)
@@ -358,23 +374,46 @@ def preview_rows(paths, root):
     total = 0
     for p in paths[:200]:
         if not inside(root, p):
-            rows.append({"p": p, "s": 0, "level": "protected", "deletable": False,
-                         "note": "", "blocked": True, "msg": "路径不在扫描目录内，已拒绝"})
+            rows.append(
+                {
+                    "p": p,
+                    "s": 0,
+                    "level": "protected",
+                    "deletable": False,
+                    "note": "",
+                    "blocked": True,
+                    "msg": "路径不在扫描目录内，已拒绝",
+                }
+            )
             continue
         if not os.path.exists(safe_path(p)):
-            rows.append({"p": p, "s": 0, "level": "protected", "deletable": False,
-                         "note": "", "blocked": True, "msg": "路径已不存在"})
+            rows.append(
+                {
+                    "p": p,
+                    "s": 0,
+                    "level": "protected",
+                    "deletable": False,
+                    "note": "",
+                    "blocked": True,
+                    "msg": "路径已不存在",
+                }
+            )
             continue
         size = tree_size(p)
         info = rules.classify(p)
         blocked = info["level"] == rules.LEVEL_PROTECTED
-        rows.append({
-            "p": p, "s": size,
-            "level": info["level"], "cat": info["level"],
-            "deletable": info["deletable"], "note": info["note"],
-            "blocked": blocked,
-            "msg": "系统/程序数据，禁止删除" if blocked else "",
-        })
+        rows.append(
+            {
+                "p": p,
+                "s": size,
+                "level": info["level"],
+                "cat": info["level"],
+                "deletable": info["deletable"],
+                "note": info["note"],
+                "blocked": blocked,
+                "msg": "系统/程序数据，禁止删除" if blocked else "",
+            }
+        )
         if not blocked:
             total += size
     return rows, total

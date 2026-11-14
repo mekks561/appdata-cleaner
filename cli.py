@@ -13,8 +13,14 @@ import sys
 CLI_MODE = "cli-oneclick"
 
 _CLI_KEYS = {
-    "--scan", "--dry-run", "--oneclick", "--yes", "--json",
-    "--version", "-h", "--help",
+    "--scan",
+    "--dry-run",
+    "--oneclick",
+    "--yes",
+    "--json",
+    "--version",
+    "-h",
+    "--help",
 }
 
 EXIT_OK = 0
@@ -35,7 +41,8 @@ def is_cli_invocation(argv):
 def build_parser(version):
     p = argparse.ArgumentParser(
         prog="AppDataCleaner",
-        description="AppData 磁盘清理助手 v%s 命令行模式（默认只读，删除需显式确认）" % version)
+        description="AppData 磁盘清理助手 v%s 命令行模式（默认只读，删除需显式确认）" % version,
+    )
     g = p.add_mutually_exclusive_group()
     g.add_argument("--scan", action="store_true", help="只扫描并输出摘要，不删除任何文件")
     g.add_argument("--dry-run", action="store_true", help="列出将清理的安全缓存项，不删除")
@@ -63,7 +70,7 @@ def _utf8():
 
 def _fmt_size(n):
     n = float(n or 0)
-    for unit, div in (("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024)):
+    for unit, div in (("GB", 1024**3), ("MB", 1024**2), ("KB", 1024)):
         if n >= div:
             return "%.1f %s" % (n / div, unit)
     return "%d B" % int(n)
@@ -79,8 +86,14 @@ def _emit(args, payload, lines):
 
 
 def _fail(args, ver, action, root, msg, code):
-    payload = {"version": ver, "action": action or "", "root": root,
-               "ok": False, "exitCode": code, "error": msg}
+    payload = {
+        "version": ver,
+        "action": action or "",
+        "root": root,
+        "ok": False,
+        "exitCode": code,
+        "error": msg,
+    }
     return _emit(args, payload, ["错误：%s" % msg])
 
 
@@ -100,9 +113,16 @@ def _sync_scan(app, root, depth, hot, big, fresh):
         app.STATE.finish(result=result)
 
     try:
-        app.scan.run_scan(root, depth, hot, big, on_begin=begin,
-                          on_finish=finish, fresh=fresh,
-                          cache_dir=app.DATA_DIR)
+        app.scan.run_scan(
+            root,
+            depth,
+            hot,
+            big,
+            on_begin=begin,
+            on_finish=finish,
+            fresh=fresh,
+            cache_dir=app.DATA_DIR,
+        )
     except Exception:
         return None
     return holder.get("result")
@@ -111,8 +131,12 @@ def _sync_scan(app, root, depth, hot, big, fresh):
 def _emit_scan(args, ver, action, root, res):
     inc = res.get("incremental") or {}
     payload = {
-        "version": ver, "action": action, "root": root,
-        "ok": True, "exitCode": EXIT_OK, "error": "",
+        "version": ver,
+        "action": action,
+        "root": root,
+        "ok": True,
+        "exitCode": EXIT_OK,
+        "error": "",
         "scan": {
             "totalSize": res.get("totalSize") or 0,
             "fileCount": res.get("fileCount") or 0,
@@ -126,9 +150,13 @@ def _emit_scan(args, ver, action, root, res):
         "AppData 磁盘清理助手 v%s · CLI" % ver,
         "动作    : 扫描",
         "根目录  : %s" % root,
-        "扫描完成: %s / %d 个文件 / 耗时 %.1fs / 增量复用 %s" % (
-            _fmt_size(res.get("totalSize")), res.get("fileCount") or 0,
-            res.get("elapsed") or 0, "是" if inc.get("used") else "否"),
+        "扫描完成: %s / %d 个文件 / 耗时 %.1fs / 增量复用 %s"
+        % (
+            _fmt_size(res.get("totalSize")),
+            res.get("fileCount") or 0,
+            res.get("elapsed") or 0,
+            "是" if inc.get("used") else "否",
+        ),
         "错误数  : %d" % (res.get("errorCount") or 0),
         "（未执行任何删除）",
     ]
@@ -136,15 +164,21 @@ def _emit_scan(args, ver, action, root, res):
 
 
 def _emit_plan(args, ver, action, root, items, needs_confirm):
-    rows = [{"p": it.get("p") or "", "size": it.get("s") or 0,
-             "level": "safe"} for it in items]
+    rows = [{"p": it.get("p") or "", "size": it.get("s") or 0, "level": "safe"} for it in items]
     total = sum(r["size"] for r in rows)
     code = EXIT_UNCONFIRMED if needs_confirm else EXIT_OK
     payload = {
-        "version": ver, "action": action, "root": root,
-        "ok": True, "exitCode": code, "error": "",
-        "deleted": False, "needsConfirm": needs_confirm,
-        "itemCount": len(rows), "totalSize": total, "items": rows,
+        "version": ver,
+        "action": action,
+        "root": root,
+        "ok": True,
+        "exitCode": code,
+        "error": "",
+        "deleted": False,
+        "needsConfirm": needs_confirm,
+        "itemCount": len(rows),
+        "totalSize": total,
+        "items": rows,
     }
     lines = [
         "AppData 磁盘清理助手 v%s · CLI" % ver,
@@ -154,31 +188,40 @@ def _emit_plan(args, ver, action, root, items, needs_confirm):
     ]
     for r in rows:
         lines.append("  [safe] %-10s %s" % (_fmt_size(r["size"]), r["p"]))
-    lines.append("缺少 --yes：未执行任何删除（退出码 %d）" % code
-                 if needs_confirm else "（dry-run：未执行任何删除）")
+    lines.append(
+        "缺少 --yes：未执行任何删除（退出码 %d）" % code
+        if needs_confirm
+        else "（dry-run：未执行任何删除）"
+    )
     return _emit(args, payload, lines)
 
 
 def _emit_result(args, ver, action, root, result):
     fails = result.get("failCount") or 0
     payload = {
-        "version": ver, "action": action, "root": root,
-        "ok": fails == 0, "exitCode": EXIT_FAILED if fails else EXIT_OK,
-        "error": "", "deleted": True, "mode": CLI_MODE,
+        "version": ver,
+        "action": action,
+        "root": root,
+        "ok": fails == 0,
+        "exitCode": EXIT_FAILED if fails else EXIT_OK,
+        "error": "",
+        "deleted": True,
+        "mode": CLI_MODE,
         "freedBySize": result.get("freedBySize") or 0,
         "okCount": result.get("okCount") or 0,
-        "failCount": fails, "undoable": False,
+        "failCount": fails,
+        "undoable": False,
         "results": result.get("results") or [],
     }
     lines = [
         "AppData 磁盘清理助手 v%s · CLI" % ver,
         "动作    : 一键清理（已显式确认）",
         "根目录  : %s" % root,
-        "已清理 %d 项，释放 %s（默认移入回收站，可从回收站还原）" % (
-            result.get("okCount") or 0, _fmt_size(result.get("freedBySize"))),
+        "已清理 %d 项，释放 %s（默认移入回收站，可从回收站还原）"
+        % (result.get("okCount") or 0, _fmt_size(result.get("freedBySize"))),
         "失败 %d 项" % fails,
     ]
-    for r in (result.get("results") or []):
+    for r in result.get("results") or []:
         if not r.get("ok"):
             lines.append("  [FAIL] %s  %s" % (r.get("p"), r.get("msg")))
     return _emit(args, payload, lines)
@@ -189,20 +232,27 @@ def run_cli(argv, app):
     _utf8()
     ver = app.APP_VERSION
     args = build_parser(ver).parse_args(argv)
-    action = ("scan" if args.scan else
-              "dry-run" if args.dry_run else
-              "oneclick" if args.oneclick else None)
+    action = (
+        "scan"
+        if args.scan
+        else "dry-run"
+        if args.dry_run
+        else "oneclick"
+        if args.oneclick
+        else None
+    )
     if action is None:
-        return _fail(args, ver, action, "",
-                     "请指定 --scan / --dry-run / --oneclick 之一", EXIT_INVALID)
+        return _fail(
+            args, ver, action, "", "请指定 --scan / --dry-run / --oneclick 之一", EXIT_INVALID
+        )
 
     root = os.path.abspath(args.root or app.DEFAULT_ROOT)
     if not app.inside(app.USER_HOME, root):
-        return _fail(args, ver, action, root,
-                     "只允许扫描当前用户目录下的路径：%s" % root, EXIT_OUTSIDE)
+        return _fail(
+            args, ver, action, root, "只允许扫描当前用户目录下的路径：%s" % root, EXIT_OUTSIDE
+        )
     if not os.path.isdir(root):
-        return _fail(args, ver, action, root,
-                     "目录不存在：%s" % root, EXIT_INVALID)
+        return _fail(args, ver, action, root, "目录不存在：%s" % root, EXIT_INVALID)
 
     depth = min(6, max(1, args.max_depth))
     hot = max(0.001, float(args.hot_mb))
@@ -211,8 +261,7 @@ def run_cli(argv, app):
         os.makedirs(app.DATA_DIR, exist_ok=True)
         os.makedirs(app.LOG_DIR, exist_ok=True)
     except OSError as ex:
-        return _fail(args, ver, action, root,
-                     "数据目录不可写：%s" % ex, EXIT_INVALID)
+        return _fail(args, ver, action, root, "数据目录不可写：%s" % ex, EXIT_INVALID)
 
     res = _sync_scan(app, root, depth, hot, big, args.fresh)
     if res is None:
@@ -226,8 +275,9 @@ def run_cli(argv, app):
         return _fail(args, ver, action, root, err, EXIT_FAILED)
 
     if action == "dry-run" or not args.yes:
-        return _emit_plan(args, ver, action, root, items,
-                          needs_confirm=(action == "oneclick" and not args.yes))
+        return _emit_plan(
+            args, ver, action, root, items, needs_confirm=(action == "oneclick" and not args.yes)
+        )
 
     result, err = app.run_oneclick(CLI_MODE)
     if err:

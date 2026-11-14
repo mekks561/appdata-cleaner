@@ -18,19 +18,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import guide  # noqa: E402
 from tests.common import Checker, post  # noqa: E402
 
-ALLOWED_PREFIXES = ("https://support.microsoft.com/",
-                    "https://learn.microsoft.com/")
+ALLOWED_PREFIXES = ("https://support.microsoft.com/", "https://learn.microsoft.com/")
 
 
 def _links_ok(links):
-    return (isinstance(links, list) and len(links) >= 3
-            and all(isinstance(lnk, dict) and isinstance(lnk.get("title"), str)
-                    and isinstance(lnk.get("url"), str)
-                    and lnk["url"].startswith(ALLOWED_PREFIXES)
-                    for lnk in links))
+    return (
+        isinstance(links, list)
+        and len(links) >= 3
+        and all(
+            isinstance(lnk, dict)
+            and isinstance(lnk.get("title"), str)
+            and isinstance(lnk.get("url"), str)
+            and lnk["url"].startswith(ALLOWED_PREFIXES)
+            for lnk in links
+        )
+    )
 
 
 # ---------------- 单元：路径校验与复核 ----------------
+
 
 def test_unit(c):
     st, b = guide.build_guide(None)
@@ -71,6 +77,7 @@ def test_no_io_surface(c):
     """静态断言：guide 模块零执行面（PLAN-1.8 §4 零新增攻击面）。"""
     import inspect
     import re
+
     src = inspect.getsource(guide)
     c.ok("无 subprocess 调用", "subprocess" not in src)
     c.ok("无 os 命令执行", not re.search(r"os\.(system|popen|remove|rename|rmdir)", src))
@@ -83,17 +90,23 @@ def test_no_io_surface(c):
 
 # ---------------- API 端到端 ----------------
 
+
 def test_api(c):
     # 快照整份配置（只发 rules 会把 port/dest 等重置为默认），finally 恢复
     from tests.common import get
+
     _st, snap = get("/api/config")
     orig = snap["config"]
     orig_rules = orig.get("rules") or []
 
     try:
         # 注入一条自定义 protected 规则（走与 UI 相同的保存路径）
-        user_rule = {"segments": ["local", "testguideapp"], "level": "protected",
-                     "note": "测试专用保护目录", "vendor": "自定义"}
+        user_rule = {
+            "segments": ["local", "testguideapp"],
+            "level": "protected",
+            "note": "测试专用保护目录",
+            "vendor": "自定义",
+        }
         st, r = post("/api/config", dict(orig, rules=orig_rules + [user_rule]))
         c.ok("注入自定义 protected 规则成功", st == 200, st)
 

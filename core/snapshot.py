@@ -128,12 +128,14 @@ def save(cache_dir, root, tree, hot, big, max_depth, elapsed, ext=None):
 def _prune(cache_dir):
     """只保留最近 KEEP 份快照，避免换着目录扫时无限堆积。"""
     try:
-        names = [n for n in os.listdir(cache_dir)
-                 if n.startswith("snapshot-") and n.endswith(".json")]
+        names = [
+            n for n in os.listdir(cache_dir) if n.startswith("snapshot-") and n.endswith(".json")
+        ]
         if len(names) <= KEEP:
             return
-        files = sorted(((os.path.getmtime(os.path.join(cache_dir, n)), n) for n in names),
-                       reverse=True)
+        files = sorted(
+            ((os.path.getmtime(os.path.join(cache_dir, n)), n) for n in names), reverse=True
+        )
         for _t, n in files[KEEP:]:
             try:
                 os.remove(os.path.join(cache_dir, n))
@@ -151,6 +153,7 @@ def drop(cache_dir, root):
 
 
 # ---------------- 1.4 R3：两次扫描的变化对比 ----------------
+
 
 def flatten(tree):
     """结果树 → {规范化路径: 摘要}。根节点不参与逐项对比（它的 delta 会霸榜）。
@@ -215,7 +218,7 @@ def compare(old_tree, new_tree, top=20, approx=False, baseline_at=None):
     added.sort(key=lambda x: -x["s"])
     removed.sort(key=lambda x: -x["s"])
     grown.sort(key=lambda x: -x["delta"])
-    shrunk.sort(key=lambda x: x["delta"])       # 最负的排最前
+    shrunk.sort(key=lambda x: x["delta"])  # 最负的排最前
     limit = max(1, int(top))
 
     def cut(items):
@@ -227,11 +230,15 @@ def compare(old_tree, new_tree, top=20, approx=False, baseline_at=None):
         "hasBaseline": True,
         "baselineAt": baseline_at,
         "approx": bool(approx),
-        "new": cut(added), "removed": cut(removed),
-        "grown": cut(grown), "shrunk": cut(shrunk),
+        "new": cut(added),
+        "removed": cut(removed),
+        "grown": cut(grown),
+        "shrunk": cut(shrunk),
         "totals": {
-            "new": len(added), "removed": len(removed),
-            "grown": len(grown), "shrunk": len(shrunk),
+            "new": len(added),
+            "removed": len(removed),
+            "grown": len(grown),
+            "shrunk": len(shrunk),
             "deltaBytes": delta_bytes,
         },
         "reusedCount": sum(1 for n in new.values() if n["reused"]),

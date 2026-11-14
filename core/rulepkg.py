@@ -9,7 +9,6 @@
     （server.py：validate → config.save → rules.apply_user_rules）。
 """
 
-
 from core import config
 
 PACKAGE_FORMAT = "appdata-cleaner-rules"
@@ -41,21 +40,24 @@ def validate_package(raw):
     if raw.get("format") != PACKAGE_FORMAT:
         return [], ["规则包格式不正确（format 必须是 %r）" % PACKAGE_FORMAT], []
     if raw.get("version") != PACKAGE_VERSION:
-        return [], ["规则包版本不受支持（version=%r，本程序支持 version=%d）"
-                    % (raw.get("version"), PACKAGE_VERSION)], []
+        return (
+            [],
+            [
+                "规则包版本不受支持（version=%r，本程序支持 version=%d）"
+                % (raw.get("version"), PACKAGE_VERSION)
+            ],
+            [],
+        )
     rules = raw.get("rules")
     if not isinstance(rules, list):
         return [], ["规则包缺少 rules 数组"], []
     if len(rules) > config.MAX_RULES:
-        return [], ["规则包最多包含 %d 条规则（实际 %d）"
-                    % (config.MAX_RULES, len(rules))], []
+        return [], ["规则包最多包含 %d 条规则（实际 %d）" % (config.MAX_RULES, len(rules))], []
 
     warnings = []
     declared = raw.get("count")
-    if isinstance(declared, int) and not isinstance(declared, bool) \
-            and declared != len(rules):
-        warnings.append("包内 count=%d 与实际条数 %d 不符，以实际条数为准"
-                        % (declared, len(rules)))
+    if isinstance(declared, int) and not isinstance(declared, bool) and declared != len(rules):
+        warnings.append("包内 count=%d 与实际条数 %d 不符，以实际条数为准" % (declared, len(rules)))
     valid, errors = config._validate_rules(rules)
     warnings.extend(errors)
     return valid, [], warnings

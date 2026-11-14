@@ -43,13 +43,20 @@ def _ac(**kw):
 
 # ---------------- 四条不变量 ----------------
 
+
 def test_g1_only_safe(c):
     c.eq("Local\\Temp → safe", rules.classify(U + r"\Local\Temp")["level"], "safe")
     c.eq("Local\\NVIDIA → suspect", rules.classify(U + r"\Local\NVIDIA")["level"], "suspect")
-    c.eq("Local\\Microsoft\\Edge → protected",
-         rules.classify(U + r"\Local\Microsoft\Edge")["level"], "protected")
-    c.eq("Roaming\\OtherApp → data",
-         rules.classify(U + r"\Roaming\OtherApp\settings.json")["level"], "data")
+    c.eq(
+        "Local\\Microsoft\\Edge → protected",
+        rules.classify(U + r"\Local\Microsoft\Edge")["level"],
+        "protected",
+    )
+    c.eq(
+        "Roaming\\OtherApp → data",
+        rules.classify(U + r"\Roaming\OtherApp\settings.json")["level"],
+        "data",
+    )
     src = open(autoclean.__file__, encoding="utf-8").read()
     for call in ("os.remove", "os.unlink", "shutil.rmtree"):
         c.ok("autoclean 调度模块不含 %s（删除经注入 run_fn）" % call, call not in src)
@@ -69,8 +76,11 @@ def test_g3_default_off(c):
     cfg, errs, _w = config.validate({})
     c.eq("空配置回退默认（关闭）", cfg["autoClean"]["enabled"], False)
     cfg, errs, _w = config.validate({"autoClean": {"enabled": "yes"}})
-    c.ok("坏 enabled → 整段回退关闭", bool(errs) and not cfg["autoClean"]["enabled"],
-         cfg["autoClean"])
+    c.ok(
+        "坏 enabled → 整段回退关闭",
+        bool(errs) and not cfg["autoClean"]["enabled"],
+        cfg["autoClean"],
+    )
     c.eq("CLI 空参数不触发（仍走服务）", cli.is_cli_invocation([]), False)
     c.eq("CLI --takeover 不触发", cli.is_cli_invocation(["--takeover"]), False)
 
@@ -78,23 +88,35 @@ def test_g3_default_off(c):
 def test_g4_recoverable(c):
     c.eq("RUN_MODE 固定为历史模式", autoclean.RUN_MODE, "auto-oneclick")
     calls = []
-    r = autoclean.maybe_run({"autoClean": {"enabled": False, "interval": "daily",
-                                           "hour": 12}},
-                            lambda: None, lambda: NOW,
-                            lambda: calls.append(1) or (0, 0), now=NOW)
+    r = autoclean.maybe_run(
+        {"autoClean": {"enabled": False, "interval": "daily", "hour": 12}},
+        lambda: None,
+        lambda: NOW,
+        lambda: calls.append(1) or (0, 0),
+        now=NOW,
+    )
     c.eq("未启用不调用执行函数", (r["ran"], calls), (False, []))
-    r = autoclean.maybe_run(_ac(), lambda: None, lambda: NOW - 9 * 86400,
-                            lambda: calls.append(1) or (0, 0), now=NOW)
+    r = autoclean.maybe_run(
+        _ac(), lambda: None, lambda: NOW - 9 * 86400, lambda: calls.append(1) or (0, 0), now=NOW
+    )
     c.eq("stale 不调用执行函数", (r["ran"], calls), (False, []))
 
 
 # ---------------- G5 / G6（1.6 CLI） ----------------
 
+
 def test_g5_cli_no_delete(c):
     """CLI 只能是薄参数层，删除必须全部经注入的服务端单点。"""
     src = open(cli.__file__, encoding="utf-8").read()
-    for call in ("os.remove", "os.unlink", "shutil.rmtree", "force_remove",
-                 "permanent(", "recycle(", "exec_action("):
+    for call in (
+        "os.remove",
+        "os.unlink",
+        "shutil.rmtree",
+        "force_remove",
+        "permanent(",
+        "recycle(",
+        "exec_action(",
+    ):
         c.ok("CLI 源码不含 %s（无第二套删除路径）" % call, call not in src)
 
 
@@ -114,14 +136,22 @@ def _fake_app(tmp):
 
     class _Scan:
         @staticmethod
-        def run_scan(root, depth, hot, big, on_begin=None, on_finish=None,
-                     fresh=False, cache_dir=None):
+        def run_scan(
+            root, depth, hot, big, on_begin=None, on_finish=None, fresh=False, cache_dir=None
+        ):
             class _Ctx:
                 phase = "完成"
+
             if on_begin:
                 on_begin(_Ctx(), root)
-            res = {"totalSize": 1024, "fileCount": 1, "elapsed": 0,
-                   "errorCount": 0, "scannedAt": "", "incremental": {}}
+            res = {
+                "totalSize": 1024,
+                "fileCount": 1,
+                "elapsed": 0,
+                "errorCount": 0,
+                "scannedAt": "",
+                "incremental": {},
+            }
             if on_finish:
                 on_finish(res, None)
             return res
@@ -139,13 +169,11 @@ def _fake_app(tmp):
         inside = staticmethod(inside)
 
         def plan_oneclick(self):
-            return ([{"p": os.path.join(tmp, "Local", "Temp"),
-                      "s": 1024, "level": "safe"}], None)
+            return ([{"p": os.path.join(tmp, "Local", "Temp"), "s": 1024, "level": "safe"}], None)
 
         def run_oneclick(self, mode):
             calls.append(mode)
-            return ({"freedBySize": 1024, "okCount": 1, "failCount": 0,
-                     "results": []}, None)
+            return ({"freedBySize": 1024, "okCount": 1, "failCount": 0, "results": []}, None)
 
     app = App()
     app.calls = calls
@@ -183,6 +211,7 @@ def test_g6_explicit_confirm(c):
 
 # ---------------- 配置向前兼容 ----------------
 
+
 def test_compat(c):
     tmp = tempfile.mkdtemp(prefix="acfg15-")
     try:
@@ -195,22 +224,35 @@ def test_compat(c):
         c.eq("补齐 warnGB 默认 10", cfg["warnGB"], 10)
 
         # 1.4 时代完整配置 roundtrip
-        cfg, errs, _w = config.validate({
-            "port": 8765, "dest": "D:\\AppDataBackup",
-            "dup": {"minSizeMB": 50, "hashBudgetSec": 120},
-            "autoClean": {"enabled": True, "interval": "weekly", "hour": 22},
-            "warnGB": 0, "rules": [],
-        })
-        c.eq("1.4 配置 roundtrip",
-             (cfg["warnGB"], cfg["autoClean"]["hour"], cfg["dup"]["minSizeMB"],
-              cfg["autoClean"]["interval"]), (0, 22, 50, "weekly"))
+        cfg, errs, _w = config.validate(
+            {
+                "port": 8765,
+                "dest": "D:\\AppDataBackup",
+                "dup": {"minSizeMB": 50, "hashBudgetSec": 120},
+                "autoClean": {"enabled": True, "interval": "weekly", "hour": 22},
+                "warnGB": 0,
+                "rules": [],
+            }
+        )
+        c.eq(
+            "1.4 配置 roundtrip",
+            (
+                cfg["warnGB"],
+                cfg["autoClean"]["hour"],
+                cfg["dup"]["minSizeMB"],
+                cfg["autoClean"]["interval"],
+            ),
+            (0, 22, 50, "weekly"),
+        )
         c.eq("1.4 配置无错误", errs, [])
 
         # 缺字段补默认：autoClean 只给 enabled
         cfg, errs, _w = config.validate({"autoClean": {"enabled": True}})
-        c.eq("缺 interval/hour 补默认",
-             (cfg["autoClean"]["enabled"], cfg["autoClean"]["interval"],
-              cfg["autoClean"]["hour"]), (True, "daily", 12))
+        c.eq(
+            "缺 interval/hour 补默认",
+            (cfg["autoClean"]["enabled"], cfg["autoClean"]["interval"], cfg["autoClean"]["hour"]),
+            (True, "daily", 12),
+        )
         c.eq("缺字段无错误", errs, [])
 
         # warnGB 坏值回退默认

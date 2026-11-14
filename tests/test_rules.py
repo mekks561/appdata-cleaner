@@ -28,7 +28,6 @@ CASES = [
     (U + r"\Roaming\Microsoft\Templates", "protected"),
     (U + r"\Local\Microsoft\WindowsApps", "protected"),
     (U + r"\Local\Microsoft\Office\16.0", "protected"),
-
     # —— safe（10）——
     (U + r"\Local\Temp", "safe"),
     (U + r"\Local\Temp\hsperfdata", "safe"),
@@ -40,28 +39,26 @@ CASES = [
     (U + r"\Local\CrashDumps", "safe"),
     (U + r"\Local\pip\cache", "safe"),
     (U + r"\Roaming\npm-cache", "safe"),
-
     # —— suspect（10）——
-    (U + r"\Local\MicrosoftEdge\User Data", "data"),         # 1.0 曾被误判为 protected
-    (U + r"\Local\Microsoft VS Code\Cache", "suspect"),      # 1.0 曾被误判为 protected
-    (U + r"\Local\NVIDIA", "suspect"),                       # 1.0 曾整块标为 safe
+    (U + r"\Local\MicrosoftEdge\User Data", "data"),  # 1.0 曾被误判为 protected
+    (U + r"\Local\Microsoft VS Code\Cache", "suspect"),  # 1.0 曾被误判为 protected
+    (U + r"\Local\NVIDIA", "suspect"),  # 1.0 曾整块标为 safe
     (U + r"\Local\AMD", "suspect"),
     (U + r"\Local\Docker\wsl", "suspect"),
     (U + r"\Roaming\Tencent\WXWork", "suspect"),
     (U + r"\Local\Tencent\WeChat", "suspect"),
     (U + r"\Local\Doubao", "suspect"),
     (U + r"\Local\Trae", "suspect"),
-    (U + r"\Local\SomeApp\Cache\data", "suspect"),           # 只能靠启发式，不能给 safe
+    (U + r"\Local\SomeApp\Cache\data", "suspect"),  # 只能靠启发式，不能给 safe
     (U + r"\Local\Teams\Cache", "suspect"),
-
     # —— data（10）——
     (U + r"\Roaming\SomeApp\data", "data"),
     (U + r"\Local\SomeApp\settings", "data"),
-    (U + r"\Local\NVIDIA Corporation\installer", "data"),    # 段不相等，不能命中 nvidia
-    (U + r"\Local\Microsoft Corporation\x", "data"),         # 段不相等，不能命中 microsoft
-    (U + r"\Local\PackagesX\foo", "data"),                   # 段不相等，不能命中 packages
+    (U + r"\Local\NVIDIA Corporation\installer", "data"),  # 段不相等，不能命中 nvidia
+    (U + r"\Local\Microsoft Corporation\x", "data"),  # 段不相等，不能命中 microsoft
+    (U + r"\Local\PackagesX\foo", "data"),  # 段不相等，不能命中 packages
     (U + r"\Roaming\MicrosoftEdge\User Data", "data"),
-    (U + r"\Local\SomeApp\logs_backup", "data"),             # 不是 logs 段
+    (U + r"\Local\SomeApp\logs_backup", "data"),  # 不是 logs 段
     (U + r"\Roaming\Slack\storage", "data"),
     (U + r"\Local\JetBrains\IntelliJIdea2026.1", "data"),
     (U + r"\Local\ProgramsX\foo", "data"),
@@ -72,8 +69,11 @@ def run():
     c = Checker("规则层 (R1+R2)")
     for path, want in CASES:
         got = rules.classify(path)
-        c.ok("%s → %s（实际 %s）" % (path.split("AppData")[-1], want, got["level"]),
-             got["level"] == want, got["rule"] or got["note"])
+        c.ok(
+            "%s → %s（实际 %s）" % (path.split("AppData")[-1], want, got["level"]),
+            got["level"] == want,
+            got["rule"] or got["note"],
+        )
 
     # 不变式 1：protected 一律不可删
     bad = [p for p, want in CASES if want == "protected" and rules.classify(p)["deletable"]]
@@ -88,8 +88,7 @@ def run():
         c.ok("回归：%s 不是 safe" % p.split("AppData")[-1], rules.classify(p)["level"] != "safe")
 
     # 不变式 4：safe 必须带说明，用户要知道删了什么
-    no_note = [p for p, want in CASES
-               if want == "safe" and not rules.classify(p)["note"]]
+    no_note = [p for p, want in CASES if want == "safe" and not rules.classify(p)["note"]]
     c.ok("不变式：safe 规则均带用途说明", not no_note, no_note)
 
     return c.report()

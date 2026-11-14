@@ -76,8 +76,7 @@ def test_api(c):
     body["warnGB"] = -1
     st3, bad = post("/api/config", body)
     c.eq("非法阈值保存被 400 拒绝", st3, 400)
-    c.ok("拒绝原因点名 warnGB",
-         any("warnGB" in str(x) for x in (bad.get("details") or [])), bad)
+    c.ok("拒绝原因点名 warnGB", any("warnGB" in str(x) for x in (bad.get("details") or [])), bad)
     st4, info2 = get("/api/info")
     c.eq("拒绝后阈值未被改写", info2.get("warnGB"), info.get("warnGB"))
 

@@ -22,12 +22,12 @@ CACHE_DIR = os.path.join(APP, "cache")
 
 def _build(root):
     files = [
-        ("Local/AppA/Cache/a.BIN", 12),          # 后缀大小写归一
+        ("Local/AppA/Cache/a.BIN", 12),  # 后缀大小写归一
         ("Local/AppA/Cache/b.bin", 8),
         ("Local/AppA/Data/db.sqlite", 20),
         ("Local/AppB/Deep/Deeper/deep.bin", 6),  # 超出 max_depth，归属到可见祖先
         ("Roaming/Other/settings.json", 1),
-        ("Roaming/Other/Local State", 1),        # 无后缀
+        ("Roaming/Other/Local State", 1),  # 无后缀
         ("Local/Temp/t1.log", 2),
     ]
     for rel, mb in files:
@@ -82,8 +82,7 @@ def test_units(c):
     c.eq("未截断时 otherDirs 为 0", e["items"][0]["otherDirs"], 0)
 
     # —— 目录分布 Top N 与 otherDirs 披露 ——
-    many = {".dll": {"s": 0, "f": 0, "dirs": {r"C:\d%02d" % i: [10 - i, 1]
-                                              for i in range(12)}}}
+    many = {".dll": {"s": 0, "f": 0, "dirs": {r"C:\d%02d" % i: [10 - i, 1] for i in range(12)}}}
     many[".dll"]["s"] = sum(v[0] for v in many[".dll"]["dirs"].values())
     many[".dll"]["f"] = 12
     g = scan_mod.ext_summary(many)["items"][0]
@@ -99,8 +98,7 @@ def test_units(c):
     c.eq("输出裁剪到 EXT_SHOW", w["shown"], scan_mod.EXT_SHOW)
     c.eq("types 仍是全量", w["types"], scan_mod.EXT_SHOW + 7)
     c.eq("totalBytes 仍是全量", w["totalBytes"], sum(x["s"] for x in wide.values()))
-    c.ok("占比之和小于 100（分母是全量而非前 N 名）",
-         sum(x["pct"] for x in w["items"]) < 100)
+    c.ok("占比之和小于 100（分母是全量而非前 N 名）", sum(x["pct"] for x in w["items"]) < 100)
 
     # —— ScanCtx.add_ext 按目录批量合并 ——
     ctx = scan_mod.ScanCtx(ROOT, 3, 1, 1)
@@ -124,8 +122,12 @@ def test_offline_scan(c):
         _age(root)
         full = scan_mod.run_scan(root, 3, 1, 5, fresh=True, cache_dir=cache)
         e = full["ext"]
-        c.eq("全量聚合总量等于扫描树体积", e["totalBytes"], full["totalSize"],
-             "%d vs %d" % (e["totalBytes"], full["totalSize"]))
+        c.eq(
+            "全量聚合总量等于扫描树体积",
+            e["totalBytes"],
+            full["totalSize"],
+            "%d vs %d" % (e["totalBytes"], full["totalSize"]),
+        )
         c.eq("全量聚合文件数等于扫描文件数", e["totalFiles"], full["fileCount"])
         c.eq("全量不标 approx", e["approx"], False)
         c.eq("全量不标 partial", e["partial"], False)
@@ -133,22 +135,27 @@ def test_offline_scan(c):
         c.ok("后缀大小写归一为 .bin", ".bin" in names and ".BIN" not in names, names)
         c.ok("无后缀独立成组", "(无后缀)" in names, names)
         c.ok("多类型被聚合", len(names) >= 5, names)
-        c.eq("占比合计接近 100%",
-             round(sum(x["pct"] for x in e["items"])), 100,
-             sum(x["pct"] for x in e["items"]))
+        c.eq(
+            "占比合计接近 100%",
+            round(sum(x["pct"] for x in e["items"])),
+            100,
+            sum(x["pct"] for x in e["items"]),
+        )
 
         # 深层文件归属到「结果树最深层可见目录」：deep.bin 在 Deeper（depth4），
         # 应归到 Local\AppB\Deep（depth3），而不是 Deeper 本身。
         bins = next(x for x in e["items"] if x["ext"] == ".bin")
         owners = [d["p"] for d in bins["dirs"]]
-        c.ok("深层文件并入可见祖先目录",
-             any(p.endswith("Deep") for p in owners) and
-             not any(p.endswith("Deeper") for p in owners), owners)
+        c.ok(
+            "深层文件并入可见祖先目录",
+            any(p.endswith("Deep") for p in owners)
+            and not any(p.endswith("Deeper") for p in owners),
+            owners,
+        )
 
         # 增量复用：复用的子树本轮没读文件，沿用快照里的整份统计并标 approx
         incr = scan_mod.run_scan(root, 3, 1, 5, fresh=False, cache_dir=cache)
-        c.ok("冷目录发生增量复用", incr["incremental"]["used"],
-             incr["incremental"])
+        c.ok("冷目录发生增量复用", incr["incremental"]["used"], incr["incremental"])
         c.eq("增量轮次标 approx", incr["ext"]["approx"], True)
         c.eq("增量沿用旧统计不标 partial", incr["ext"]["partial"], False)
         c.eq("增量沿用旧统计总量", incr["ext"]["totalBytes"], e["totalBytes"])
@@ -160,8 +167,9 @@ def test_offline_scan(c):
         c.eq("强制全量后总量不变", fresh2["ext"]["totalBytes"], e["totalBytes"])
 
         # 旧快照（升级前的格式）没有 ext 字段：不能因此带崩扫描
-        snapshot.save(cache, root, full["tree"], list(full["hot"]),
-                      list(full["big"]), 3, full["elapsed"])
+        snapshot.save(
+            cache, root, full["tree"], list(full["hot"]), list(full["big"]), 3, full["elapsed"]
+        )
         legacy = scan_mod.run_scan(root, 3, 1, 5, fresh=False, cache_dir=cache)
         c.ok("旧格式快照仍能产出 ext", isinstance(legacy.get("ext"), dict))
         c.ok("旧格式快照按本轮实扫统计", legacy["ext"]["totalBytes"] >= 0)
@@ -198,8 +206,7 @@ def test_api(c):
     c.ok("接口结果含 .bin", ".bin" in names, names)
     c.ok("接口结果含无后缀项", "(无后缀)" in names, names)
     st2, again = get("/api/result")
-    c.eq("/api/result 二次读取 ext 稳定", again.get("ext", {}).get("totalBytes"),
-         e["totalBytes"])
+    c.eq("/api/result 二次读取 ext 稳定", again.get("ext", {}).get("totalBytes"), e["totalBytes"])
 
 
 def run():

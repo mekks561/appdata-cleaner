@@ -72,6 +72,7 @@ def run():
 
     # 8 清理移动目标
     import shutil
+
     shutil.rmtree(dest, ignore_errors=True)
     return c.report()
 

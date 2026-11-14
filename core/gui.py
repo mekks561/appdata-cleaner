@@ -6,6 +6,7 @@
 不调用任何删除 API。webview 延迟导入，保证 CLI/测试/--web 路径
 仍是纯标准库运行。
 """
+
 import sys
 
 
@@ -18,6 +19,7 @@ def _hide_console():
     if getattr(sys, "frozen", False):
         try:
             import ctypes
+
             wh = ctypes.windll.kernel32.GetConsoleWindow()
             if wh:
                 ctypes.windll.user32.ShowWindow(wh, 0)  # SW_HIDE
@@ -38,6 +40,7 @@ def supported():
     """环境是否支持桌面窗口（WebView2 可用性不在此处探测，由 run 失败降级）。"""
     try:
         import webview  # noqa: F401
+
         return True
     except Exception:
         return False

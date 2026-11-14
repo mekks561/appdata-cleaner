@@ -48,10 +48,8 @@ def _run(root, workers, tag):
 def _node_shape(n):
     if not n:
         return None
-    kids = tuple(sorted((_node_shape(k) for k in (n.get("kids") or []) if k),
-                        key=lambda x: x[0]))
-    return (n["p"], n["s"], n["f"], n["d"], n["level"],
-            bool(n["deletable"]), kids)
+    kids = tuple(sorted((_node_shape(k) for k in (n.get("kids") or []) if k), key=lambda x: x[0]))
+    return (n["p"], n["s"], n["f"], n["d"], n["level"], bool(n["deletable"]), kids)
 
 
 def _shape(res):
@@ -90,8 +88,7 @@ def test_workers(c):
 
 def test_consistency(c):
     root = os.path.join(APP, "testdata_parallel")
-    caches = [os.path.join(APP, "testdata_cache_" + t)
-              for t in ("serial", "par8", "par4")]
+    caches = [os.path.join(APP, "testdata_cache_" + t) for t in ("serial", "par8", "par4")]
     try:
         shutil.rmtree(root, ignore_errors=True)
         _build(root)
@@ -100,8 +97,16 @@ def test_consistency(c):
         par4 = _run(root, 4, "par4")
 
         a, b, d = _shape(serial), _shape(par8), _shape(par4)
-        for field in ("totalSize", "fileCount", "tree", "hot", "big",
-                      "errorCount", "truncated", "incrementalUsed"):
+        for field in (
+            "totalSize",
+            "fileCount",
+            "tree",
+            "hot",
+            "big",
+            "errorCount",
+            "truncated",
+            "incrementalUsed",
+        ):
             c.eq("并行(8) 与串行一致 · " + field, b[field], a[field])
             c.eq("并行(4) 与串行一致 · " + field, d[field], a[field])
 
@@ -111,8 +116,11 @@ def test_consistency(c):
         c.ok("scannedAtEpoch 保留", bool(par8.get("scannedAtEpoch")))
         c.ok("首次扫描无 diff 基准", par8.get("diff") is None)
 
-        c.ok("树结构可展开（未因并行丢节点）",
-             len(par8["tree"]["kids"] or []) >= 2, len(par8["tree"]["kids"] or []))
+        c.ok(
+            "树结构可展开（未因并行丢节点）",
+            len(par8["tree"]["kids"] or []) >= 2,
+            len(par8["tree"]["kids"] or []),
+        )
     finally:
         shutil.rmtree(root, ignore_errors=True)
         for p in caches:
@@ -134,9 +142,11 @@ def test_diff_baseline_survives(c):
         second = scan.run_scan(root, 3, 1, 5, cache_dir=cache)
         c.ok("第二次拿到基线", bool((second.get("diff") or {}).get("hasBaseline")))
         c.eq("基线时间非空", bool(second["diff"].get("baselineAt")), True)
-        c.eq("无变化时新增/移除为 0",
-             (second["diff"]["totals"]["new"], second["diff"]["totals"]["removed"]),
-             (0, 0))
+        c.eq(
+            "无变化时新增/移除为 0",
+            (second["diff"]["totals"]["new"], second["diff"]["totals"]["removed"]),
+            (0, 0),
+        )
         # fresh 强制全量也要保留对比基准（不是只有增量才有 diff）
         third = scan.run_scan(root, 3, 1, 5, fresh=True, cache_dir=cache)
         c.ok("强制全量仍有 diff 基准", bool((third.get("diff") or {}).get("hasBaseline")))
@@ -160,4 +170,5 @@ def run():
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run() else 1)

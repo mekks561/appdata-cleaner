@@ -41,6 +41,7 @@ def config_path(app_dir):
 
 # ---------------- 校验 ----------------
 
+
 def _validate_port(v):
     if not isinstance(v, int) or isinstance(v, bool):
         return None, "端口必须是整数"
@@ -166,8 +167,9 @@ def _validate_rules(v):
         vendor = r.get("vendor")
         if not isinstance(vendor, str):
             vendor = ""
-        out.append({"segments": clean, "level": level,
-                    "note": note.strip(), "vendor": vendor.strip()})
+        out.append(
+            {"segments": clean, "level": level, "note": note.strip(), "vendor": vendor.strip()}
+        )
     return out, errors
 
 
@@ -227,13 +229,15 @@ def validate(raw):
     # 1.9 根注册表：坏根降级为警告（丢弃该项但整体仍可保存）。
     # 理由：登记根可能指向临时不可用的目录，不能因此让整个设置页保存失败。
     roots_out, root_errors = roots_mod.validate_list(
-        raw.get("roots", DEFAULTS["roots"]), os.path.expanduser("~"))
+        raw.get("roots", DEFAULTS["roots"]), os.path.expanduser("~")
+    )
     warnings.extend("扫描根配置 %s，已忽略" % e for e in root_errors)
     cfg["roots"] = roots_out
     return cfg, errors, warnings
 
 
 # ---------------- 读 ----------------
+
 
 def load(app_dir):
     """启动加载。任何异常都回退默认，绝不阻塞服务启动。
@@ -259,13 +263,14 @@ def load(app_dir):
             raw = None
     if raw is None:
         raw = dict(DEFAULTS)
-        save(app_dir, raw)          # 首次运行生成默认配置文件
+        save(app_dir, raw)  # 首次运行生成默认配置文件
     cfg, _errors, warns = validate(raw)
     warnings.extend(warns)
     return cfg, warnings
 
 
 # ---------------- 写 ----------------
+
 
 def save(app_dir, cfg):
     """原子写入 + 旧文件备份。返回错误信息或 None。"""

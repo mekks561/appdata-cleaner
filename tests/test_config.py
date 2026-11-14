@@ -59,8 +59,7 @@ def run():
 
         # —— validate：自定义规则 ——
         _, _cfg, w = (None, None, None)
-        good = [{"segments": ["local", "mytool", "cache"], "level": "safe",
-                 "note": "自建工具缓存"}]
+        good = [{"segments": ["local", "mytool", "cache"], "level": "safe", "note": "自建工具缓存"}]
         cfg_r, errs, w = config.validate({"rules": good})
         c.eq("合法规则通过", len(cfg_r["rules"]), 1)
         c.eq("合法规则无错误", errs, [])
@@ -75,11 +74,15 @@ def run():
         for body, label in bad_cases:
             _c, _e, w = config.validate(body)
             c.ok("规则校验拒绝：%s" % label, len(_e) > 0, _e)
-        cfg_many, e_many, w_many = config.validate({"rules": [
-            {"segments": ["local", "a"], "level": "safe", "note": "x"},
-            {"segments": ["local", "b"], "level": "protected", "note": "y"},
-            {"segments": [], "level": "safe", "note": "bad"},
-        ]})
+        cfg_many, e_many, w_many = config.validate(
+            {
+                "rules": [
+                    {"segments": ["local", "a"], "level": "safe", "note": "x"},
+                    {"segments": ["local", "b"], "level": "protected", "note": "y"},
+                    {"segments": [], "level": "safe", "note": "bad"},
+                ]
+            }
+        )
         c.eq("部分非法只丢非法条目", len(cfg_many["rules"]), 2)
         c.ok("部分非法给出硬错误（保存时整体拒绝）", len(e_many) == 1, e_many)
         c.eq("部分非法不产生警告", w_many, [])
@@ -87,9 +90,11 @@ def run():
         # —— 用户规则优先级（防呆不变式） ——
         try:
             # 用户 protected：连内置 safe 都要给它让路
-            n = rules.apply_user_rules([
-                {"segments": ["local", "temp"], "level": "protected", "note": "测试保护"},
-            ])
+            n = rules.apply_user_rules(
+                [
+                    {"segments": ["local", "temp"], "level": "protected", "note": "测试保护"},
+                ]
+            )
             c.eq("注入 1 条用户规则", n, 1)
             r1 = rules.classify(U + r"\Local\Temp")
             c.eq("用户 protected 覆盖内置 safe", r1["level"], "protected")
@@ -97,18 +102,29 @@ def run():
             c.ok("note 带来源标记", "自定义" in r1["note"], r1["note"])
 
             # 用户 safe 不能覆盖内置 protected
-            rules.apply_user_rules([
-                {"segments": ["local", "microsoft"], "level": "safe", "note": "想把系统目录标绿"},
-            ])
+            rules.apply_user_rules(
+                [
+                    {
+                        "segments": ["local", "microsoft"],
+                        "level": "safe",
+                        "note": "想把系统目录标绿",
+                    },
+                ]
+            )
             r2 = rules.classify(U + r"\Local\Microsoft\Edge")
             c.eq("用户 safe 无法覆盖内置 protected", r2["level"], "protected")
             c.ok("未命中用户规则时无 custom 标记", r2.get("custom") is False, r2)
 
             # 用户 safe 覆盖内置 suspect（对自己的目录有最终解释权）
-            rules.apply_user_rules([
-                {"segments": ["local", "nvidia"], "level": "safe",
-                 "note": "我确认整个 NVIDIA 都是缓存"},
-            ])
+            rules.apply_user_rules(
+                [
+                    {
+                        "segments": ["local", "nvidia"],
+                        "level": "safe",
+                        "note": "我确认整个 NVIDIA 都是缓存",
+                    },
+                ]
+            )
             r3 = rules.classify(U + r"\Local\NVIDIA")
             c.eq("用户 safe 覆盖内置 suspect", r3["level"], "safe")
             # 但内置 protected 仍然赢
@@ -116,7 +132,7 @@ def run():
             c.eq("内置 protected 在用户 safe 下仍保护", r4["level"], "protected")
             c.ok("规则计数与注入一致", rules.user_rule_count() >= 1, rules.user_rule_count())
         finally:
-            rules.apply_user_rules([])      # 还原全局状态，绝不影响其他测试
+            rules.apply_user_rules([])  # 还原全局状态，绝不影响其他测试
         c.eq("清空后规则数归零", rules.user_rule_count(), 0)
         c.eq("还原后 Temp 恢复安全", rules.classify(U + r"\Local\Temp")["level"], "safe")
 

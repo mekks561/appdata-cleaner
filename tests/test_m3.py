@@ -32,10 +32,11 @@ def run():
     # —— 历史 ——
     st, h = get("/api/history?limit=20")
     c.eq("history 200", st, 200)
-    c.ok("历史含 move 记录",
-         any(i.get("mode") == "move" and i.get("manifestId") == mid
-             for i in h["items"]),
-         [i.get("mode") for i in h["items"]])
+    c.ok(
+        "历史含 move 记录",
+        any(i.get("mode") == "move" and i.get("manifestId") == mid for i in h["items"]),
+        [i.get("mode") for i in h["items"]],
+    )
     if h["items"]:
         rec = h["items"][0]
         c.ok("记录带时间与计数", bool(rec.get("ts")) and rec.get("count", 0) >= 1, rec.get("ts"))
@@ -46,8 +47,11 @@ def run():
     c.eq("还原 1 项", u.get("restoredCount"), 1, u.get("results"))
     c.ok("原路径回来了", os.path.isdir(data))
     db = os.path.join(data, "db.sqlite")
-    c.ok("还原后内容大小一致", os.path.exists(db) and os.path.getsize(db) == 20 * MB,
-         os.path.getsize(db) if os.path.exists(db) else "missing")
+    c.ok(
+        "还原后内容大小一致",
+        os.path.exists(db) and os.path.getsize(db) == 20 * MB,
+        os.path.getsize(db) if os.path.exists(db) else "missing",
+    )
     c.ok("备份目录已搬走", not os.path.exists(moved_to))
 
     st, h2 = get("/api/history?limit=20")
@@ -55,9 +59,7 @@ def run():
 
     # —— 重复撤销：逐项说明，不崩溃 ——
     st, u2 = post("/api/undo", {"manifestId": mid})
-    c.ok("重复撤销返回说明",
-         u2.get("results") and "撤销" in u2["results"][0]["msg"],
-         u2)
+    c.ok("重复撤销返回说明", u2.get("results") and "撤销" in u2["results"][0]["msg"], u2)
 
     # —— manifestId 视为不可信输入 ——
     st, u3 = post("/api/undo", {"manifestId": "../../secret.json"})
@@ -74,8 +76,7 @@ def run():
     # —— 回收站体积估算接口 ——
     st, ts = get("/api/trash/size")
     c.eq("trash/size 200", st, 200)
-    c.ok("trash/size 字段齐备",
-         {"ok", "size", "partial"} <= set(ts) or st != 200, ts)
+    c.ok("trash/size 字段齐备", {"ok", "size", "partial"} <= set(ts) or st != 200, ts)
 
     shutil.rmtree(dest, ignore_errors=True)
     return c.report()

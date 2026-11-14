@@ -56,10 +56,21 @@ def main():
     if info:
         print("复用已在运行的服务：v%s" % info.get("version"))
     else:
-        env = dict(os.environ, APP_NO_BROWSER="1", APP_NO_GUI="1",
-                   APP_NO_WARMUP="1", APP_NO_AUTOCLEAN="1", PYTHONUTF8="1")
-        proc = subprocess.Popen([sys.executable, "server.py"], cwd=APP, env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        env = dict(
+            os.environ,
+            APP_NO_BROWSER="1",
+            APP_NO_GUI="1",
+            APP_NO_WARMUP="1",
+            APP_NO_AUTOCLEAN="1",
+            PYTHONUTF8="1",
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "server.py"],
+            cwd=APP,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
         for _ in range(60):
             time.sleep(0.25)
             info = alive()
@@ -74,8 +85,8 @@ def main():
     results = []
     try:
         results.append(test_rules.run())
-        results.append(test_rulepkg.run())    # 1.7 规则包：单元 + API，快照后恢复配置
-        results.append(test_guide.run())      # 1.8 解锁引导：只读端点 + 零执行面断言
+        results.append(test_rulepkg.run())  # 1.7 规则包：单元 + API，快照后恢复配置
+        results.append(test_guide.run())  # 1.8 解锁引导：只读端点 + 零执行面断言
         results.append(test_config.run())
         results.append(test_api.run())
         results.append(test_flow.run())
@@ -84,15 +95,15 @@ def main():
         results.append(test_m1.run())
         results.append(test_auto.run())
         results.append(test_dup.run())
-        results.append(test_warn.run())       # 只读写配置校验，不碰 testdata
-        results.append(test_gate.run())       # 安全门禁矩阵 + 配置兼容（单元，独立临时目录）
+        results.append(test_warn.run())  # 只读写配置校验，不碰 testdata
+        results.append(test_gate.run())  # 安全门禁矩阵 + 配置兼容（单元，独立临时目录）
         # 这几组放在最后：test_parallel 用独立临时目录；test_diff 与 test_ext
         # 会清掉 testdata 的快照并改动 testdata 内容；test_cli 在 run() 内才
         # 延迟 import server（加载期会应用用户自定义规则），不应影响前面的组。
         results.append(test_parallel.run())
         results.append(test_diff.run())
         results.append(test_ext.run())
-        results.append(test_cli.run())       # 1.6 CLI：不启服务，注入 server 模块直调
+        results.append(test_cli.run())  # 1.6 CLI：不启服务，注入 server 模块直调
         # 2.1 GUI 启动模式：纯函数 + 静态断言，不起服务不开窗口
         results.append(test_gui.run())
         # 1.9 多根：会触发一次扫描，放最后避免结果树影响其他组
@@ -109,8 +120,9 @@ def main():
 
     ok = all(results)
     print("\n" + "=" * 46)
-    print(" 结果：%s（%d/%d 组通过）"
-          % ("全部通过" if ok else "存在失败", sum(results), len(results)))
+    print(
+        " 结果：%s（%d/%d 组通过）" % ("全部通过" if ok else "存在失败", sum(results), len(results))
+    )
     print("=" * 46)
     return 0 if ok else 1
 
