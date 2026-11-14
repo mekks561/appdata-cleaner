@@ -24,7 +24,7 @@
 也可以打包成**单文件 exe**（无需安装 Python 的机器也能跑）：
 
 ```
-build_exe.bat        （或命令行：python -m PyInstaller --onefile --name AppDataCleaner --add-data "static;static" --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py）
+build_exe.bat        （一键构建；构建依赖版本锁定在 requirements-build.txt）
 ```
 
 产物 `dist\AppDataCleaner.exe` 双击即用；`config.json`/`logs`/`cache` 自动生成在 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
@@ -225,6 +225,9 @@ static/index.html      页面结构
 static/style.css       样式
 static/app.js          交互逻辑（搜索、筛选、键盘、CSV 导出、设置页）
 build_exe.bat          PyInstaller onefile 构建（构建期依赖：PyInstaller + pywebview + pythonnet）
+requirements-build.txt 构建期依赖版本锁定（不进入运行时）
+pyproject.toml         Ruff 配置与项目元数据（版本真值仍只在 server.py）
+.pre-commit-config.yaml 提交前 Ruff 检查与格式化钩子（可选，本地执行 pre-commit install 启用）
 run_tests.py           一键跑全部分组（自动拉起临时服务）
 cli.py                 命令行入口（薄参数层，不含任何删除调用）
 release_gate.py        发版门禁（发版期工具，不进 exe、不改运行时）

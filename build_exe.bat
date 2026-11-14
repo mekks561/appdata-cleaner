@@ -1,21 +1,12 @@
 @echo off
 rem Build a standalone exe (onefile). Output: dist\AppDataCleaner.exe
-rem Requires Python 3.9+. PyInstaller is installed automatically if missing.
+rem Requires Python 3.9+. Build deps are pinned in requirements-build.txt.
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
-python -m pip show pyinstaller >nul 2>&1
-if errorlevel 1 (
-  echo Installing PyInstaller ...
-  python -m pip install pyinstaller || goto :fail
-)
-
-python -m pip show pywebview >nul 2>&1
-if errorlevel 1 (
-  echo Installing pywebview - GUI window shell ...
-  python -m pip install pywebview || goto :fail
-)
+rem 构建依赖锁定在 requirements-build.txt；已满足时 pip 会快速返回
+python -m pip install -q -r requirements-build.txt || goto :fail
 
 python -m PyInstaller --noconfirm --clean --onefile --name AppDataCleaner --add-data "static;static" --exclude-module tests --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py || goto :fail
 
