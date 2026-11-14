@@ -38,4 +38,15 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile --name AppDataCleaner --add-data "static;static" --exclude-module tests --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py
 
       - name: 发版门禁（C6 回归已由 pytest 执行，这里跳过避免重复）
-        run: python release_gate.py --no-regression
+        run: |
+          # 失败时把门禁的 [FAIL] 与明细行转成 annotation：CI 日志需要鉴权才能取，
+          # annotation 可在公开 API 上直接读，定位阻断项不必再靠猜。
+          $out = @(python release_gate.py --no-regression 2>&1)
+          $out | ForEach-Object { Write-Output $_ }
+          if ($LASTEXITCODE -ne 0) {
+            $out | Where-Object { $_ -match '^\s*\[FAIL\]|^\s{8}\S' } | Select-Object -First 9 | ForEach-Object {
+              $msg = ($_ -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A').Trim()
+              Write-Output "::error title=gate::$msg"
+            }
+            exit 1
+          }
