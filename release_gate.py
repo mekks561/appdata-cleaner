@@ -4,6 +4,7 @@
     python release_gate.py                    # 完整门禁（默认，含全量回归 + 双形态产物）
     python release_gate.py --no-regression   # 跳过 C6 全量回归
     python release_gate.py --no-smoke        # 跳过 C5 双形态产物检查
+    python release_gate.py --no-manifest     # 跳过 C7 发布清单检查（产物未构建时）
     python release_gate.py --self-test       # 门禁自检：构造被破坏的副本，验证能拦下
     python release_gate.py --json            # 结构化输出（报告仍写 logs/gate_report.json）
 
@@ -18,6 +19,7 @@
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import re
@@ -95,6 +97,7 @@ PLAN_FILES = (
     "PLAN-1.9.md",
     "PLAN-2.0.md",
     "PLAN-2.1.md",
+    "PLAN-2.2.md",
 )
 
 
@@ -306,6 +309,61 @@ def check_dual_smoke(root):
     return (not bad), (bad or ["源码 + exe 双形态 --version 均为 %s（零删除）" % want])
 
 
+# ---------------- C7 发布清单 ----------------
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def check_manifest(root):
+    """dist/release.json 必须存在、版本一致、含主产物、逐项 SHA256 一致。"""
+    rel = os.path.join("dist", "release.json")
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path):
+        return False, ["发布清单缺失：dist/release.json（先跑 tools/release_manifest.py）"]
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        return False, ["发布清单无法解析：%s: %s" % (type(e).__name__, e)]
+
+    bad = []
+    ver = _version(root)
+    if not ver:
+        bad.append("版本真值缺失，无法核对清单版本")
+    elif data.get("version") != ver:
+        bad.append("清单版本为 %r，期望 %s" % (data.get("version"), ver))
+
+    files = data.get("files")
+    if not isinstance(files, list) or not files:
+        bad.append("files 段为空或类型错误")
+        files = []
+    names = [x.get("name") for x in files if isinstance(x, dict)]
+    if "AppDataCleaner.exe" not in names:
+        bad.append("清单未包含主产物 AppDataCleaner.exe")
+
+    for item in files:
+        if not isinstance(item, dict):
+            bad.append("清单条目类型非法：%r" % (item,))
+            continue
+        name = item.get("name") or ""
+        fp = os.path.join(root, "dist", name)
+        if not os.path.isfile(fp):
+            bad.append("清单列出的产物不存在：dist/%s" % name)
+            continue
+        if os.path.getsize(fp) != item.get("size"):
+            bad.append("dist/%s 大小与清单不符" % name)
+        if _sha256(fp) != item.get("sha256"):
+            bad.append("dist/%s SHA256 与清单不符" % name)
+
+    return (not bad), (bad or ["发版清单 v%s 与 %d 个产物逐项一致" % (ver, len(files))])
+
+
 # ---------------- C6 全量回归 ----------------
 
 
@@ -360,6 +418,21 @@ def _skeleton(root):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
+    # C7 基线：主产物 + 自洽的发布清单
+    dist = os.path.join(root, "dist")
+    os.makedirs(dist, exist_ok=True)
+    exe = os.path.join(dist, "AppDataCleaner.exe")
+    with open(exe, "wb") as f:
+        f.write(b"skeleton-exe")
+    manifest = {
+        "version": ver,
+        "generatedAt": "2026-11-12T00:00:00",
+        "files": [
+            {"name": "AppDataCleaner.exe", "size": os.path.getsize(exe), "sha256": _sha256(exe)}
+        ],
+    }
+    with open(os.path.join(dist, "release.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
 
 
 def _write(root, rel, text):
@@ -374,6 +447,7 @@ def self_test():
         ("C2 门禁矩阵在册", check_gate_suite),
         ("C3 静态安全面", check_static_security),
         ("C4 文档同步", check_docs),
+        ("C7 发布清单", check_manifest),
     ]
     results = []
     # 门禁脚本自身零删除面：用 AST 查真实调用节点，避免「禁用 token 常量」
@@ -470,6 +544,30 @@ def self_test():
         results.append(("破坏⑦PLAN 缺失被拦下", not ok, ["期望 FAIL"]))
         os.rename(p + ".bak", p)
 
+        # 破坏 8–11：发布清单（C7）
+        mf = os.path.join(repo, "dist", "release.json")
+        good_manifest = _read(repo, "dist/release.json")
+
+        os.rename(mf, mf + ".bak")
+        ok, _ = check_manifest(repo)
+        results.append(("破坏⑧发布清单缺失被拦下", not ok, ["期望 FAIL"]))
+        os.rename(mf + ".bak", mf)
+
+        _write(repo, "dist/release.json", good_manifest.replace('"2.0.0"', '"0.0.0"', 1))
+        ok, _ = check_manifest(repo)
+        results.append(("破坏⑨清单版本不符被拦下", not ok, ["期望 FAIL"]))
+        _write(repo, "dist/release.json", good_manifest)
+
+        _write(repo, "dist/release.json", good_manifest.replace('"sha256": "', '"sha256": "dead'))
+        ok, _ = check_manifest(repo)
+        results.append(("破坏⑩产物哈希不符被拦下", not ok, ["期望 FAIL"]))
+        _write(repo, "dist/release.json", good_manifest)
+
+        _write(repo, "dist/release.json", '{"version": "2.0.0", "files": []}')
+        ok, _ = check_manifest(repo)
+        results.append(("破坏⑪主产物缺失被拦下", not ok, ["期望 FAIL"]))
+        _write(repo, "dist/release.json", good_manifest)
+
     ok_all = all(ok for _, ok, _ in results)
     for name, ok, detail in results:
         print(
@@ -494,6 +592,9 @@ def main():
     ap = argparse.ArgumentParser(description="AppData Cleaner 发版门禁")
     ap.add_argument("--no-regression", action="store_true", help="跳过 C6 全量回归")
     ap.add_argument("--no-smoke", action="store_true", help="跳过 C5 双形态产物检查")
+    ap.add_argument(
+        "--no-manifest", action="store_true", help="跳过 C7 发布清单检查（产物未构建时）"
+    )
     ap.add_argument("--self-test", action="store_true", help="门禁自检（构造破坏副本）")
     ap.add_argument("--json", action="store_true", help="结构化输出报告")
     args = ap.parse_args()
@@ -509,6 +610,8 @@ def main():
     ]
     if not args.no_smoke:
         checks.append(("C5 双形态产物", check_dual_smoke))
+    if not args.no_manifest:
+        checks.append(("C7 发布清单", check_manifest))
     if not args.no_regression:
         checks.append(("C6 全量回归", check_regression))
 

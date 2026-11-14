@@ -33,6 +33,7 @@ def _hash(rel):
 
 def test_module(c):
     c.ok("门禁模块可导入", hasattr(gate, "check_version_sources"))
+    c.ok("C7 清单检查器在位", hasattr(gate, "check_manifest"))
     c.ok("版本真值可提取", gate._version(APP) is not None, gate._version(APP))
     c.eq("G1–G6 六条门禁函数名齐全", len(gate.GATE_FUNCS), 6)
     c.eq("版本字面量来源 4 处（+server 真值）", len(gate.VERSION_SOURCES), 4)
@@ -147,7 +148,7 @@ def test_static_gate_subprocess(c):
     """跳过 C5/C6 的门禁对当前仓库应返回 0（收口后口径一致）。"""
     try:
         r = subprocess.run(
-            [sys.executable, "release_gate.py", "--no-regression", "--no-smoke"],
+            [sys.executable, "release_gate.py", "--no-regression", "--no-smoke", "--no-manifest"],
             cwd=APP,
             capture_output=True,
             text=True,
@@ -171,6 +172,7 @@ def test_skeleton_breaks(c):
             ("C2", gate.check_gate_suite),
             ("C3", gate.check_static_security),
             ("C4", gate.check_docs),
+            ("C7", gate.check_manifest),
         ):
             ok, detail = fn(repo)
             c.ok("骨架基线 %s 全绿" % name, ok, detail)
@@ -246,6 +248,33 @@ def test_skeleton_breaks(c):
         ok, _ = gate.check_docs(repo)
         c.ok("破坏「PLAN 文档缺失」被拦下", not ok)
         os.rename(p + ".bak", p)
+
+        # ---- C7 发布清单：基线已在上方验证，这里只验四类破坏 ----
+        mf = os.path.join(repo, "dist", "release.json")
+        good = gate._read(repo, "dist/release.json")
+
+        os.rename(mf, mf + ".bak")
+        ok, _ = gate.check_manifest(repo)
+        c.ok("破坏「发布清单缺失」被拦下", not ok)
+        os.rename(mf + ".bak", mf)
+
+        gate._write(repo, "dist/release.json", good.replace('"2.0.0"', '"0.0.0"', 1))
+        ok, _ = gate.check_manifest(repo)
+        c.ok("破坏「清单版本不符」被拦下", not ok)
+        gate._write(repo, "dist/release.json", good)
+
+        gate._write(repo, "dist/release.json", good.replace('"sha256": "', '"sha256": "dead'))
+        ok, _ = gate.check_manifest(repo)
+        c.ok("破坏「产物哈希不符」被拦下", not ok)
+        gate._write(repo, "dist/release.json", good)
+
+        gate._write(repo, "dist/release.json", '{"version": "2.0.0", "files": []}')
+        ok, _ = gate.check_manifest(repo)
+        c.ok("破坏「主产物移出清单」被拦下", not ok)
+        gate._write(repo, "dist/release.json", good)
+
+        ok, detail = gate.check_manifest(repo)
+        c.ok("清单恢复后 C7 重新全绿", ok, detail)
 
 
 def test_no_recursion_guard(c):

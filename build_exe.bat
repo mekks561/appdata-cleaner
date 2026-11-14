@@ -10,8 +10,11 @@ python -m pip install -q -r requirements-build.txt || goto :fail
 
 python -m PyInstaller --noconfirm --clean --onefile --name AppDataCleaner --add-data "static;static" --exclude-module tests --collect-all pythonnet --collect-all webview --collect-all clr_loader server.py || goto :fail
 
+python tools\release_manifest.py || goto :fail
+
 echo.
 echo Build OK: dist\AppDataCleaner.exe
+echo Release manifest: dist\release.json
 echo Copy it anywhere and double-click to run. config/logs/cache are created next to the exe.
 goto :eof
 
