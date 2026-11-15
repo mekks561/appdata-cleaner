@@ -16,8 +16,11 @@
   版本号由 `build_installer.bat` 从 `server.py` 读取，不写第二份真值。
 - **构建/CI**：`build_exe.bat` 末尾自动生成 `dist/release.json`；CI 在构建 exe 后生成清单再跑门禁
   （C7 生效）。CI **不安装 Inno Setup**，安装包仅本地/发版时构建。
-- **未验证项（如实披露）**：本机无 Inno Setup 6，`AppDataCleaner-Setup-2.2.0.exe` 未产出（脚本已给出
-  安装指引）；本机无 Nuitka，**未做任何 Nuitka A/B 对比**，留独立评估。
+- **安装包交付**：Inno Setup 6.7.3（`winget` 按用户安装，落在 `%LOCALAPPDATA%\Programs`），
+  `build_installer.bat` 相应补了 LocalAppData 探测；`AppDataCleaner-Setup-2.2.0.exe`
+  （15,979,597 字节）已随 Release 发布，下载回环 SHA256 一致；`.iss` 架构标识改用 `x64compatible`。
+- **Nuitka 评估（已实测，结论：不采用）**：产物被安全软件秒删、需正规 CPython + C 编译器、
+  目录形态 35.5 MB 反而更大；2.3 继续 PyInstaller，启动优化优先试 `onedir`。详见 `PLAN-2.2.md` §7。
 - **发版形态**：exe + 安装包，**不做代码签名**（无证书），首次运行可能触发 SmartScreen 提示。
 
 ## 2.1.1 — 2026-11-14（工程化与验证收口：pytest / 覆盖率 / CI，接口容错）
