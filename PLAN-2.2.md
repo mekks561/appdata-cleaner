@@ -107,11 +107,24 @@ python tools/release_manifest.py --verify  # 校验清单与磁盘文件一致
 
 ## 7. 偏差记录（实施回写）
 
-- **Inno Setup 不在本机**：本机检查 `C:\Program Files (x86)\Inno Setup 6\ISCC.exe` 与
-  `C:\Program Files\Inno Setup 6\ISCC.exe` 均不存在，`build_installer.bat` 按设计打印安装指引并退出
-  `1`；`AppDataCleaner-Setup-2.2.0.exe` **本机未产出**，安装包需在装有 Inno Setup 6 的机器上执行
-  `build_installer.bat` 生成。C7 只要求 `AppDataCleaner.exe` 必在，安装包存在时自动纳入清单，
-  因此「未装 Inno Setup」不会阻塞 exe 发版。
+- **Inno Setup 后补安装并已出包**：初次因缺 `ISCC.exe`，脚本按设计打印指引并以 `1` 退出，exe 先发版
+  （C7 只要求 `AppDataCleaner.exe` 必在，安装包存在时自动纳入清单）。随后用 `winget install
+  JRSoftware.InnoSetup` 安装 6.7.3（**按用户安装**，落在 `%LOCALAPPDATA%\Programs\Inno Setup 6`），
+  原脚本只探测两处 Program Files 因而漏检 —— 已补 LocalAppData 探测（`3474189`）。
+- **架构标识告警已修**：`.iss` 的 `ArchitecturesAllowed` / `ArchitecturesInstallIn64BitMode`
+  由 `x64` 改为 `x64compatible`（`e8b1278`，Inno 6.3+ 推荐写法），重建后编译零告警。
+- **发版载体**：tag `v2.2.0` → 提交 `4eb943d`（2026-11-14）；其后 `30e1b3e`（Nuitka 结论）、
+  `3474189`、`e8b1278` 为文档与构建脚本补丁，三次 CI 均 success
+  （`43696855429` / `43699997110` / `43700198849`）。
+- **Release v2.2.0 资产（3 个，均已完成下载回环校验）**：
+  - `AppDataCleaner.exe` 14,130,259 字节，SHA256 `1E596C5CA119F4148B9E4AA640BC72E7D5712012BBC2718430E2E5B2C45A8AD9`
+  - `AppDataCleaner-Setup-2.2.0.exe` 15,979,597 字节，SHA256 `B183265394EF5AD9AB516ADB614AEB9ADDEFDE33380890038C2FE1F44A2F5F52`
+  - `release.json` 422 字节（两个产物的版本/大小/SHA256 清单）
+  - 安装包与清单在 `x64compatible` 修复后重传，旧资产（含早期 249 字节清单）已删除。
+- **验收实测**：门禁 C1–C7 全绿、`--self-test` 通过（含 C7 破坏场景）、`run_tests.py` 21 组全绿、
+  `pytest` 22 用例 + 覆盖率 77%（门槛 75%）、双形态 `--version` 均为 `v2.2.0`。
+- **未做**：安装包**无代码签名**；安装/卸载的实机流程（静默安装到临时目录 → 运行 → 卸载）尚未执行，
+  仅按脚本设计保证「卸载默认保留配置与日志」。
 - **Nuitka 评估（已实测，结论：不采用）**：环境为 Windows、360 安全卫士开启、无 MSVC；
   使用 Nuitka 4.3.5 + 便携版 CPython 3.13.18 + Zig 0.17.1。
   - **构建前提**：Store 版 Python 在链接阶段失败（`WindowsApps\libs` 拒绝访问），
