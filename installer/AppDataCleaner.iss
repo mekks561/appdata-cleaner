@@ -21,8 +21,8 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 ; 当前用户权限安装：不写 Program Files、不注册服务、不改系统目录
 PrivilegesRequired=lowest
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
 OutputBaseFilename=AppDataCleaner-Setup-{#AppVersion}
 Compression=lzma2
