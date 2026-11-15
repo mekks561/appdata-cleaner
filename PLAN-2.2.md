@@ -18,7 +18,7 @@
 | `requires-python` | **保持 `>=3.9`**，不改代码、不改下限 |
 | 跨盘根（如 `D:\Downloads`） | **本版不做**，留 2.3 待定（信任边界仍限用户目录内） |
 | Inno Setup 依赖 | 仅**构建安装包时**需要，不进入 exe/运行期；CI 不安装 |
-| Nuitka A/B | 本机未安装 → **未验证，不编造对比数据**；单独立项 |
+| Nuitka A/B | 已实测（见 §7）→ **不采用**，继续 PyInstaller |
 
 ## 3. 技术设计
 
@@ -91,7 +91,7 @@ python tools/release_manifest.py --verify  # 校验清单与磁盘文件一致
 ### M4 验证与发版
 - Ruff → `run_tests.py` → `pytest` → 构建 exe → 生成清单 → 完整门禁（含 C7）→ `--self-test`；
 - 分提交推送，CI 全绿后打 `v2.2.0` tag；
-- Nuitka 未安装，**不做未经验证的对比**。
+- Nuitka 评估结论见 §7：实测后**不采用**，继续 PyInstaller。
 
 ## 6. 验收标准
 
@@ -112,5 +112,15 @@ python tools/release_manifest.py --verify  # 校验清单与磁盘文件一致
   `1`；`AppDataCleaner-Setup-2.2.0.exe` **本机未产出**，安装包需在装有 Inno Setup 6 的机器上执行
   `build_installer.bat` 生成。C7 只要求 `AppDataCleaner.exe` 必在，安装包存在时自动纳入清单，
   因此「未装 Inno Setup」不会阻塞 exe 发版。
-- **Nuitka**：`python -m nuitka --version` 返回 `No module named nuitka`，本版**未安装、未测**，
-  无任何体积/启动对比数据；留作独立评估项。
+- **Nuitka 评估（已实测，结论：不采用）**：环境为 Windows、360 安全卫士开启、无 MSVC；
+  使用 Nuitka 4.3.5 + 便携版 CPython 3.13.18 + Zig 0.17.1。
+  - **构建前提**：Store 版 Python 在链接阶段失败（`WindowsApps\libs` 拒绝访问），
+    必须换正规 / 便携 CPython；`--enable-plugin=pywebview` 可正常打包 `static/` 与 webview 资源。
+  - **产物**：目录形态 35.5 MB / 40 个文件（其中 exe 16.0 MB）；PyInstaller onefile 为 14,130,259 字节。
+  - **启动耗时**：未能测出——产物被 360 安全卫士秒删（工作区与 `%TEMP%` 均可复现，启动报 WinError 5）；
+    同机 PyInstaller 产物正常运行，冷启动 3 次为 3572/3377/3416 ms。
+  - **构建耗时**：C 编译 85 个文件，单次超过 10 分钟，构建目录 189 MB。
+  - **结论**：2.3 及之后继续 PyInstaller；若要优化启动，先评估 PyInstaller `onedir`
+    （免去每次解压到临时目录），不换打包器。重开 Nuitka 评估的前置条件是代码签名
+    与 360/火绒等安全软件白名单。
+  - 评估用临时环境（便携 Python、Zig、构建目录与目录联接）已全部清理。
