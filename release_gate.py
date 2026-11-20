@@ -98,6 +98,7 @@ PLAN_FILES = (
     "PLAN-2.0.md",
     "PLAN-2.1.md",
     "PLAN-2.2.md",
+    "PLAN-2.3.md",
 )
 
 
