@@ -33,7 +33,8 @@ UninstallDisplayIcon={app}\{#AppExe}
 ; 未做代码签名：安装包与 exe 首次运行可能触发 SmartScreen 提示
 
 [Files]
-Source: "..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+; 2.3 起安装版为 onedir 目录形态（免解压启动）；打包 onedir 产物整体，排除本地运行留下的配置/日志/缓存
+Source: "..\dist\AppDataCleaner\*"; DestDir: "{app}"; Excludes: "config.json,config.json.bak,config.json.bad,logs\*,cache\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
@@ -54,6 +55,9 @@ var
   Answer: Integer;
 begin
   Result := True;
+  { 静默卸载不弹窗、也不删配置：无人值守场景下「保留」才是安全默认 }
+  if UninstallSilent then
+    Exit;
   Answer := MsgBox('是否同时删除配置与历史日志？' + #13#10 +
     '选择「否」将保留 config.json 与 logs 目录，重新安装后设置与历史仍在。',
     mbConfirmation, MB_YESNO);

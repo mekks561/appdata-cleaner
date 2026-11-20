@@ -1,13 +1,13 @@
 @echo off
 rem Build the Inno Setup installer. Output: dist\AppDataCleaner-Setup-<ver>.exe
-rem Requires: dist\AppDataCleaner.exe (run build_exe.bat) and Inno Setup 6 (ISCC.exe).
+rem Requires: dist\AppDataCleaner\ (onedir payload, run build_exe.bat) and Inno Setup 6 (ISCC.exe).
 rem Inno Setup is only needed for building the installer; it is not a runtime dependency.
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
 
-if not exist "dist\AppDataCleaner.exe" (
-  echo [ERROR] dist\AppDataCleaner.exe not found. Run build_exe.bat first.
+if not exist "dist\AppDataCleaner\AppDataCleaner.exe" (
+  echo [ERROR] dist\AppDataCleaner\AppDataCleaner.exe not found. Run build_exe.bat first.
   exit /b 1
 )
 

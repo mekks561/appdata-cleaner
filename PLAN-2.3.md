@@ -131,3 +131,18 @@
   `dist\AppDataCleaner\` 下的 `logs` / `cache` / `config.json`，与 onefile「配置与日志跟 exe 走」一致。
 - **GUI 路径**：onedir 启动后窗口标题为 `AppData 磁盘清理助手 v2.2.0`，`/api/info` 200，关进程前后无残留监听。
 - 双形态 `--version` 均为 `AppDataCleaner v2.2.0`（版本号在 M4 统一升到 2.3.0）；门禁 6/6 通过。
+
+### 7.3 M3 安装包改目录安装
+
+- `.iss` 的 `[Files]` 由单文件改为 `..\dist\AppDataCleaner\*`（`recursesubdirs createallsubdirs`），
+  并 `Excludes` 掉本地运行残留的 `config.json*` / `logs\*` / `cache\*`；README 照旧随包。
+- `build_installer.bat` 的存在性检查改为 `dist\AppDataCleaner\AppDataCleaner.exe`。
+- **静默卸载默认保留配置**：`InitializeUninstall` 增加 `if UninstallSilent then Exit;` ——
+  否则 `/VERYSILENT` 下 `MB_YESNO` 会取默认「是」而误删配置。
+- **实测（静默安装到 `%TEMP%\adc_m3`）**：
+  - 安装 2,619 ms；装出 `AppDataCleaner.exe`(5,862,752) + `_internal\` + README + 卸载器；
+  - `config.json` **未随包安装**（排除生效）；空的 `logs` / `cache` 目录随目录结构创建，属正常；
+  - 安装后运行 `--version` 为 `v2.2.0`，就绪 1,238 ms；首次运行在 `{app}` 下生成 `config.json` / `logs`；
+  - 静默卸载后程序文件与 `_internal` 全部移除，**`config.json` 保留**。
+- **与预期的偏差**：安装包体积由 2.2 的 15,979,597 字节**降为 13,433,775 字节**（onedir 的压缩率更好），
+  M3 原本预期「体积上升」不成立，按实测记录。
