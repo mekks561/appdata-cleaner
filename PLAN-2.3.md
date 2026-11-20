@@ -51,10 +51,12 @@
 
 ## 4. 里程碑
 
-### M1 基准先行（决策闸门）
+### M1 基准先行（决策闸门）—— 已完成
 
-- 先只构建 onedir 版本，跑 `tools/bench_startup.py` 取中位数，与 onefile 的 3.46 s 对比。
-- **闸门**：若中位数改善不足 1 s，暂停改造并把数据回写 §7，回报再定（不做无收益的形态切换）。
+- 构建 onedir 版本，`tools/bench_startup.py` 取中位数：`--version` 口径 onefile 1170 ms / onedir 316 ms；
+  GUI 就绪口径（启动 → `/api/info` 可访问 → 结束进程）onefile 1624 ms / onedir 1189 ms，详见 §7。
+- **闸门结论：未通过**（两种口径改善分别为 854 ms、435 ms，均 < 1 s）。经确认**保持原阈值与口径不变**，
+  但继续 M2 及后续里程碑；数据与决定见 §7。
 
 ### M2 构建与资源验证
 
@@ -91,4 +93,41 @@
 
 ## 7. 偏差记录（实施回写）
 
-（待回写）
+### 7.1 M1 基准实测（2026-11-20，本机、360 开启）
+
+**口径 A：`--version`**（`tools/bench_startup.py`，各 5 次取中位数）
+
+| 形态 | 5 次耗时 | 中位数 |
+|---|---|---|
+| onefile | 1253 / 1142 / 1184 / 1170 / 1132 ms | 1170 ms |
+| onedir | 774 / 326 / 316 / 316 / 309 ms | 316 ms |
+
+改善 **854 ms**（首轮 onedir 774 ms 为一次性冷缓存）。
+
+**口径 B：GUI 就绪**（启动 → `http://127.0.0.1:<port>/api/info` 返回 200 → `taskkill /T /F`，各 5 次取中位数）
+
+| 形态 | 5 次耗时 | 中位数 |
+|---|---|---|
+| onefile | 2496 / 1624 / 1908 / 1619 / 1621 ms | 1624 ms |
+| onedir | 1123 / 1240 / 1445 / 1189 / 1187 ms | 1189 ms |
+
+改善 **435 ms**。
+
+**与 PLAN 中 3.46 s 基线的差异说明**：3.46 s 是 2.2 期间的早期手工观测（含首次冷缓存等冷态因素），
+本次两种口径都从进程启动开始计时，故绝对值不可直接相减；两形态在本次同口径下可比。
+
+**闸门判定与决定**：两种口径改善均不足 1 s → **闸门不通过**。阈值与验收口径**不修改**；
+经确认继续推进 M2–M4，形态切换的收益按实测披露（约 0.4–0.9 s），不宣称更高。
+
+### 7.2 M2 双形态构建与资源路径验证
+
+- `build_exe.bat` 已改为一次构建两种形态（两条 PyInstaller 命令，参数完全一致，仅 `--onefile` / `--onedir` 不同）。
+- 产物：onefile `dist\AppDataCleaner.exe` 14,129,938 字节；onedir `dist\AppDataCleaner\` 194 个文件、
+  合计 27,161,679 字节（含 `_internal\`）。清单仍只收录 exe 与安装包，`dist\AppDataCleaner\` 不进 `release.json`。
+- **资源路径验证（onedir，`APP_NO_GUI=1` + `APP_PORT=8796`）**：
+  `/` 200（30,279 字节）、`/app.js` 200（71,572 字节）、`/style.css` 200（16,397 字节）→
+  `--add-data` 落在 `_internal\static` 后由 `sys._MEIPASS` 正常解析，静态资源无 404。
+- **同目录语义保持**：`/api/info` 显示 `logDir` / `dataDir` / `configPath` 均指向
+  `dist\AppDataCleaner\` 下的 `logs` / `cache` / `config.json`，与 onefile「配置与日志跟 exe 走」一致。
+- **GUI 路径**：onedir 启动后窗口标题为 `AppData 磁盘清理助手 v2.2.0`，`/api/info` 200，关进程前后无残留监听。
+- 双形态 `--version` 均为 `AppDataCleaner v2.2.0`（版本号在 M4 统一升到 2.3.0）；门禁 6/6 通过。
