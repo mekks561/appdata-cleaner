@@ -157,3 +157,12 @@
   `release_gate.py` **C1–C7 7/7**；`--self-test` **17/17**。
 - 终版安装包实机闭环（静默安装到 `%TEMP%\adc_m3`）：安装 3,790 ms → `--version` **v2.3.0** →
   就绪 1,231 ms → 生成 `config.json` / `logs` / `cache` → 静默卸载移除程序文件、保留配置。
+- **发版载体**：tag `v2.3.0` → 提交 `6e06dc7`（2026-11-20），CI 全绿；
+  Release `https://github.com/mekks561/appdata-cleaner/releases/tag/v2.3.0`（非 draft、非 prerelease）。
+- **Release v2.3.0 资产（3 个，均已完成下载回环校验，大小与 SHA256 与本地一致）**：
+
+| 资产 | 大小（字节） | SHA256 |
+|---|---|---|
+| `AppDataCleaner.exe` | 14,130,828 | `007d287c074c8480a475425ece5312362bb4ea6eb49fcbe47389ec8294f732a4` |
+| `AppDataCleaner-Setup-2.3.0.exe` | 13,433,138 | `10d5089ccfd49e0222b4f284759db65cf1e781c9818a1eef92002c8af858a661` |
+| `release.json` | 422 | `d29b7b115fd0da80c8ebc42aa574a083ae10e6770f11c47a7fc24de8a025917e` |
