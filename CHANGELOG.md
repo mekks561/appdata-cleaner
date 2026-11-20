@@ -1,5 +1,17 @@
 # 更新记录
 
+## 2.3.0 — 2026-11-20（启动与分发形态优化：安装版改 onedir + 双形态构建）
+
+不改清理语义、API 契约、CLI 参数与 G1–G6 安全不变量，只调整「怎么打包、怎么启动」。
+
+- **双形态构建**：`build_exe.bat` 一次产出便携单文件 `dist\AppDataCleaner.exe` 与目录形态 `dist\AppDataCleaner\`（onedir，安装包载荷）；两条 PyInstaller 命令参数完全一致，仅 `--onefile` / `--onedir` 不同。
+- **安装包改目录安装**：`installer/AppDataCleaner.iss` 的 `[Files]` 改为整体安装 onedir 目录，并排除本地运行残留的 `config.json*` / `logs\*` / `cache\*`；安装路径、当前用户权限、开始菜单快捷方式不变。
+- **静默卸载默认保留配置**：`InitializeUninstall` 增加 `UninstallSilent` 判断——无人值守卸载不再因 `MB_YESNO` 取默认值而误删 `config.json` 与 `logs`；交互式卸载仍询问。
+- **启动实测**（本机、360 开启，各 5 次取中位数）：`--version` 口径 onefile 1170 ms → onedir 316 ms；GUI 就绪口径 1624 ms → 1189 ms。改善 0.4–0.9 s，**未达 PLAN-2.3 预设的 1 s 闸门**，按确认继续推进，数据如实记录于 `PLAN-2.3.md` §7。
+- **体积**：安装包 15,979,597 → 13,433,775 字节（onedir 压缩率更好）；onedir 目录解包后 194 个文件、约 25.9 MB。
+- **验证**：新增 `tools/bench_startup.py`（纯标准库，`--version` 口径 5 次取中位数）；双形态 `--version` 均为 `v2.3.0`；资源路径（`_internal\static` 经 `sys._MEIPASS`）与「配置/日志跟 exe 走」的同目录语义经 headless + GUI 两条路径实测；全量回归与门禁 C1–C7 全绿。
+- **明确不做**：跨盘根（信任边界变更，需单独论证）、代码签名（无证书）、Nuitka 重评（2.2 已否决）、按根分自动清理、多根并行扫描。
+
 ## 2.2.0 — 2026-11-14（发版与运行时可交付：安装包 + 产物清单 + 门禁 C7）
 
 本版不改清理语义、API 契约、CLI 参数与 G1–G6 安全不变量，只补「交付」环节。

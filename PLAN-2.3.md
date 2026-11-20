@@ -146,3 +146,14 @@
   - 静默卸载后程序文件与 `_internal` 全部移除，**`config.json` 保留**。
 - **与预期的偏差**：安装包体积由 2.2 的 15,979,597 字节**降为 13,433,775 字节**（onedir 的压缩率更好），
   M3 原本预期「体积上升」不成立，按实测记录。
+
+### 7.4 M4 版本升级、全量验收与发版
+
+- 版本 2.3.0 贯通 6 处：`server.py: APP_VERSION`、界面版本按钮、`启动工具.bat`、`以管理员身份启动.bat`、
+  README 标题与版本路线、CHANGELOG 首段；`installer/AppDataCleaner.iss` 注释示例同步。
+- 正式产物：`AppDataCleaner.exe` 14,130,828 字节；`AppDataCleaner-Setup-2.3.0.exe` 13,433,138 字节；
+  `release.json` 为 v2.3.0 / 2 个产物。
+- 全量验收：Ruff check + format 通过；`run_tests.py` **21/21 组**；pytest **22 用例**、覆盖率 **77%**（门槛 75%）；
+  `release_gate.py` **C1–C7 7/7**；`--self-test` **17/17**。
+- 终版安装包实机闭环（静默安装到 `%TEMP%\adc_m3`）：安装 3,790 ms → `--version` **v2.3.0** →
+  就绪 1,231 ms → 生成 `config.json` / `logs` / `cache` → 静默卸载移除程序文件、保留配置。

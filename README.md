@@ -1,8 +1,8 @@
-# AppData 磁盘清理助手 v2.2.0
+# AppData 磁盘清理助手 v2.3.0
 
 查看并清理 `C:\Users\<你>\AppData` 下越积越大的目录。纯 Python 实现，**运行无需联网、无需 Node**。核心逻辑仅用标准库；v2.1 起的桌面窗口壳额外使用 `pywebview`（依赖 Windows 自带的 WebView2 运行时，Win10/11 默认自带），无 WebView2 时自动退回浏览器模式。
 
-> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（已发布）**：默认桌面窗口不再开浏览器 → 2.1.1 工程化与验证收口（已发布）：pytest / 覆盖率门槛 / CI 门禁与接口容错 → **2.2.0 发版与运行时可交付（本版）**：Inno Setup 安装包 + 产物 SHA256 清单 + 门禁 C7。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.2.md`。
+> 版本路线：次版本依次递增、不跳号 —— 1.5 可观测性 / 1.6 CLI / 1.7 规则库导入导出 / 1.8「申请解锁」引导 / 1.9.0 多根目录 / 2.0.0 稳定收口版，六版均已发布 → **2.1.0 界面窗口化（已发布）**：默认桌面窗口不再开浏览器 → 2.1.1 工程化与验证收口（已发布）：pytest / 覆盖率门槛 / CI 门禁与接口容错 → **2.2.0 发版与运行时可交付（已发布）**：Inno Setup 安装包 + 产物 SHA256 清单 + 门禁 C7 → **2.3.0 启动与分发形态优化（本版）**：安装版改 onedir 目录形态（免解压）+ 双形态构建 + 安装/卸载实机验证。规则详见 `PLAN-1.5.md`；各版规划见 `PLAN-1.6.md` ～ `PLAN-2.3.md`。
 
 ## 环境要求
 
@@ -22,21 +22,21 @@
 | `启动工具.bat` | 普通权限，日常清理缓存够用 |
 | `以管理员身份启动.bat` | 会弹 UAC，点「是」后以管理员运行。遇到「拒绝访问」时用这个 |
 
-也可以打包成**单文件 exe**（无需安装 Python 的机器也能跑）：
+也可以打包成**免安装 exe**（无需安装 Python 的机器也能跑）：
 
 ```
 build_exe.bat        （一键构建；构建依赖版本锁定在 requirements-build.txt）
 ```
 
-产物 `dist\AppDataCleaner.exe` 双击即用；`config.json`/`logs`/`cache` 自动生成在 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
+一次产出两种形态：便携单文件 `dist\AppDataCleaner.exe`（双击即用）与 `dist\AppDataCleaner\`（onedir 目录，安装包载荷，免解压、启动更快）。两种形态的 `config.json`/`logs`/`cache` 都自动生成在各自 exe 旁边。exe 不内嵌 UAC 清单（避免每次启动弹窗），提权走界面里的「以管理员身份重启」。
 
-也可以打成 **Inno Setup 6 安装包**（v2.2 新增；仅构建安装包时需要，不影响 exe 运行）：
+也可以打成 **Inno Setup 6 安装包**（v2.2 新增，v2.3 起改为安装 onedir 目录）：
 
 ```
 build_installer.bat   （需先跑 build_exe.bat，并安装 Inno Setup 6：https://jrsoftware.org/isdl.php）
 ```
 
-产物 `dist\AppDataCleaner-Setup-<版本>.exe` 安装到 `%LOCALAPPDATA%\Programs\AppDataCleaner`（当前用户权限，不写 Program Files、不注册服务），带开始菜单快捷方式与可选桌面图标；卸载**默认保留** `config.json` 与 `logs/`，在卸载弹窗里选「是」才一并删除。安装包**未做代码签名**，首次运行可能触发 SmartScreen 提示。
+产物 `dist\AppDataCleaner-Setup-<版本>.exe` 安装到 `%LOCALAPPDATA%\Programs\AppDataCleaner`（当前用户权限，不写 Program Files、不注册服务），带开始菜单快捷方式与可选桌面图标；卸载**默认保留** `config.json` 与 `logs/`，在卸载弹窗里选「是」才一并删除（静默卸载一律保留）。安装包**未做代码签名**，首次运行可能触发 SmartScreen 提示。
 
 每次构建（exe 或安装包）都会生成 `dist\release.json`：记录各产物的文件名、大小与 SHA256；`python tools\release_manifest.py --verify` 可一键核对下载到的文件是否与发版时一致。
 

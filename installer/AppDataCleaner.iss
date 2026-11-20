@@ -1,6 +1,6 @@
 ﻿; AppData 磁盘清理助手 —— Inno Setup 6 安装包脚本（2.2.0 新增）
 ; 由 build_installer.bat 调用：
-;   ISCC.exe /DAppVersion=2.2.0 installer\AppDataCleaner.iss
+;   ISCC.exe /DAppVersion=2.3.0 installer\AppDataCleaner.iss
 ; 版本号由构建脚本从 server.py: APP_VERSION 读取，本文件不写第二份真值。
 
 #ifndef AppVersion
